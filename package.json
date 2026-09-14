@@ -1,0 +1,23 @@
+{
+  "name": "smart-commuter-companion-app",
+  "version": "1.0.0",
+  "description": "Map of MRT stations; click one to see bus services that free-board/alight near it and another MRT station, sourced from LTA's bridging points sheet.",
+  "license": "ISC",
+  "author": "",
+  "type": "commonjs",
+  "main": "index.js",
+  "scripts": {
+    "server": "node index.js",
+    "fetch-bus-routes": "node scripts/fetchLTABusRoutes.js",
+    "fetch-mrt-stations": "node scripts/fetchLTATrainStations.js",
+    "refresh-all-data": "node scripts/fetchLTABusRoutes.js && node scripts/fetchLTATrainStations.js"
+  },
+  "dependencies": {
+    "dotenv": "^17.4.2",
+    "ejs": "^5.0.2",
+    "exceljs": "^4.4.0",
+    "express": "^5.2.1",
+    "mongodb": "^7.2.0",
+    "morgan": "^1.10.1"
+  }
+}

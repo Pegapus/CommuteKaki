@@ -1,0 +1,140 @@
+* {
+    box-sizing: border-box;
+}
+
+html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+#map {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    right: 0;
+}
+
+#panel {
+    position: absolute;
+    top: 16px;
+    left: 16px;
+    width: 340px;
+    max-height: calc(100vh - 32px);
+    background: rgba(255, 255, 255, 0.97);
+    border-radius: 10px;
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.18);
+    padding: 16px;
+    overflow-y: auto;
+    z-index: 5;
+}
+
+#panel-header h1 {
+    margin: 0 0 4px;
+    font-size: 18px;
+}
+
+#panel-subtitle {
+    margin: 0 0 12px;
+    font-size: 12.5px;
+    color: #4b5563;
+    line-height: 1.4;
+}
+
+#status-line {
+    font-size: 13px;
+    color: #374151;
+}
+
+#station-detail {
+    position: relative;
+}
+
+#close-detail {
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    border: none;
+    background: none;
+    font-size: 20px;
+    line-height: 1;
+    cursor: pointer;
+    color: #6b7280;
+    padding: 4px;
+}
+
+#detail-station-name {
+    margin: 0 24px 6px 0;
+    font-size: 17px;
+}
+
+#detail-station-lines {
+    margin-bottom: 10px;
+}
+
+.line-badge {
+    display: inline-block;
+    background: #1d4ed8;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 4px;
+    margin-right: 4px;
+}
+
+.line-badge.small {
+    font-size: 10px;
+    padding: 1px 5px;
+    margin-left: 6px;
+}
+
+#detail-filter {
+    width: 100%;
+    padding: 6px 8px;
+    margin-bottom: 10px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 13px;
+}
+
+#detail-connections {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.connection-row {
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 8px 10px;
+}
+
+.connection-dest {
+    font-size: 13.5px;
+    margin-bottom: 6px;
+}
+
+.connection-services {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+.service-chip {
+    background: #eef2ff;
+    color: #1d4ed8;
+    font-size: 11.5px;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 10px;
+    cursor: default;
+}
+
+.empty-note {
+    font-size: 13px;
+    color: #6b7280;
+    margin: 0;
+}
