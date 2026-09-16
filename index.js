@@ -203,8 +203,19 @@ async function fetchBridgingPointsSheet(sheetId) {
         if (!station) return;
         const codes = [];
         for (let c = 3; c <= maxCol; c++) {
-            const code = String(row.getCell(c).text || '').trim();
-            if (code) codes.push(code);
+            const cellText = String(row.getCell(c).text || '').trim();
+            if (!cellText) continue;
+            
+            cellText.split(/[,;\s\/]+/).forEach(part => {
+                const trimmed = part.trim();
+                if (!trimmed) return;
+                
+                if (/^\d{4,5}$/.test(trimmed)) {
+                    codes.push(trimmed.padStart(5, '0'));
+                } else {
+                    codes.push(trimmed);
+                }
+            });
         }
         if (codes.length) rows.push({ line, station, codes });
     });
