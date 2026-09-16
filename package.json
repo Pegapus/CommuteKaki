@@ -9,8 +9,10 @@
   "scripts": {
     "server": "node index.js",
     "fetch-bus-routes": "node scripts/fetchLTABusRoutes.js",
+    "fetch-bus-stops": "node scripts/fetchLTABusStops.js",
+    "fetch-bus-services": "node scripts/fetchLTABusServices.js",
     "fetch-mrt-stations": "node scripts/fetchLTATrainStations.js",
-    "refresh-all-data": "node scripts/fetchLTABusRoutes.js && node scripts/fetchLTATrainStations.js"
+    "refresh-all-data": "node scripts/fetchLTABusRoutes.js && node scripts/fetchLTABusStops.js && node scripts/fetchLTABusServices.js && node scripts/fetchLTATrainStations.js"
   },
   "dependencies": {
     "dotenv": "^17.4.2",

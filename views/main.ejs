@@ -17,14 +17,33 @@
         <h1>Smart Commuter Companion</h1>
         <p id="panel-subtitle">Click an MRT station to see bus services connecting it to another station via free boarding/alighting points.</p>
     </div>
-    <div id="status-line">Loading MRT stations…</div>
-    <div id="station-detail" hidden>
-        <button id="close-detail" title="Close">&times;</button>
-        <h2 id="detail-station-name"></h2>
-        <div id="detail-station-lines"></div>
-        <input id="detail-filter" type="text" placeholder="Filter destination stations…" />
-        <div id="detail-connections"></div>
+    <div id="search-bar">
+        <input id="global-search-input" type="text" placeholder="Search bus service or MRT station…" autocomplete="off" />
+        <div id="search-suggestions" hidden></div>
     </div>
+    <div id="panel-scroll">
+        <div id="status-line">Loading MRT stations…</div>
+        <div id="station-detail" hidden>
+            <button id="close-detail" title="Close">&times;</button>
+            <h2 id="detail-station-name"></h2>
+            <div id="detail-station-lines"></div>
+            <input id="detail-filter" type="text" placeholder="Filter destination stations…" />
+            <div id="detail-connections"></div>
+        </div>
+    </div>
+</div>
+
+<div id="route-info-banner" hidden>
+    <span id="route-info-text"></span>
+    <button id="route-info-close" title="Clear route">&times;</button>
+</div>
+
+<div id="layer-panel">
+    <div id="layer-panel-title">Layers</div>
+    <label class="layer-toggle">
+        <input type="checkbox" id="toggle-mrt-stations" checked>
+        <span>MRT Stations</span>
+    </label>
 </div>
 
 <script>
@@ -38,6 +57,13 @@ const map = new mapboxgl.Map({
     zoom: 11,
     maxBounds: [[103.55, 1.15], [104.15, 1.5]]
 });
+
+map.addControl(new mapboxgl.NavigationControl({ showCompass: false }), 'top-right');
+map.addControl(new mapboxgl.GeolocateControl({
+    positionOptions: { enableHighAccuracy: true },
+    trackUserLocation: true,
+    showUserHeading: true
+}), 'top-right');
 
 const statusLine = document.getElementById('status-line');
 const detailPanel = document.getElementById('station-detail');
@@ -53,6 +79,172 @@ document.getElementById('close-detail').addEventListener('click', () => {
 let connectionsData = {};
 let currentStationConnections = null;
 let activePopup = null;
+let mrtStationsVisible = true;
+let busStopDescriptions = {}; // BusStopCode -> Description, used to label search results
+let routeGeometryCache = {}; // "ServiceNo|Direction" -> [[lng,lat],...], filled lazily as the user clicks services
+let routeMarkers = [];
+let routeStopPopup = null;
+let activeRouteRequestId = 0; // bumped on every clear/new click so a stale in-flight fetch can't draw over a newer one
+let mrtStationFeatures = []; // point features built in loadData(), kept here so search can reuse them
+let busServiceRecords = []; // raw /api/bus-services rows: {ServiceNo, Direction, OriginCode, DestinationCode, ...}
+
+const ROUTE_SOURCE_ID = 'selected-bus-route';
+const ROUTE_LINE_LAYER_ID = 'selected-bus-route-line';
+const ROUTE_ARROW_LAYER_ID = 'selected-bus-route-arrows';
+const ROUTE_STOPS_SOURCE_ID = 'selected-bus-route-stops';
+const ROUTE_STOPS_LAYER_ID = 'selected-bus-route-stops-layer';
+
+const routeInfoBanner = document.getElementById('route-info-banner');
+const routeInfoText = document.getElementById('route-info-text');
+document.getElementById('route-info-close').addEventListener('click', clearSelectedRoute);
+
+// Registered once — these fire whenever a feature on this layer id exists,
+// regardless of how many times the layer itself gets removed/re-added by
+// clearSelectedRoute()/showBusRoute() below.
+map.on('mouseenter', ROUTE_STOPS_LAYER_ID, () => { map.getCanvas().style.cursor = 'pointer'; });
+map.on('mouseleave', ROUTE_STOPS_LAYER_ID, () => { map.getCanvas().style.cursor = ''; });
+map.on('click', ROUTE_STOPS_LAYER_ID, (e) => {
+    const feature = e.features[0];
+    const { busStopCode, description } = feature.properties;
+    if (routeStopPopup) routeStopPopup.remove();
+    routeStopPopup = new mapboxgl.Popup({ offset: 8 })
+        .setLngLat(feature.geometry.coordinates)
+        .setHTML(`<strong>${description}</strong><br>${busStopCode}`)
+        .addTo(map);
+});
+
+function stationHasConnections(stationEntry) {
+    return Boolean(stationEntry && (stationEntry.boardingPoints || []).some(bp => bp.destinations.length > 0));
+}
+
+function clearSelectedRoute() {
+    activeRouteRequestId++;
+    routeMarkers.forEach(m => m.remove());
+    routeMarkers = [];
+    if (routeStopPopup) { routeStopPopup.remove(); routeStopPopup = null; }
+    if (map.getLayer(ROUTE_ARROW_LAYER_ID)) map.removeLayer(ROUTE_ARROW_LAYER_ID);
+    if (map.getLayer(ROUTE_LINE_LAYER_ID)) map.removeLayer(ROUTE_LINE_LAYER_ID);
+    if (map.getLayer(ROUTE_STOPS_LAYER_ID)) map.removeLayer(ROUTE_STOPS_LAYER_ID);
+    if (map.getSource(ROUTE_SOURCE_ID)) map.removeSource(ROUTE_SOURCE_ID);
+    if (map.getSource(ROUTE_STOPS_SOURCE_ID)) map.removeSource(ROUTE_STOPS_SOURCE_ID);
+    routeInfoBanner.hidden = true;
+}
+
+function addRouteMarker(coordinates, label, background) {
+    const el = document.createElement('div');
+    el.className = 'route-endpoint-marker';
+    el.style.background = background;
+    el.textContent = label;
+    const marker = new mapboxgl.Marker({ element: el, anchor: 'center' }).setLngLat(coordinates).addTo(map);
+    routeMarkers.push(marker);
+}
+
+// Fetches (or reuses a cached) road-aligned geometry for one bus service/direction
+// and draws it on the map. The geometry itself is computed on the server only the
+// first time it's requested — snapping each stop to the road network via the
+// Mapbox Map Matching API, then routing between the snapped points via the Mapbox
+// Directions API (see /api/route-geometry in index.js) — rather than being
+// pre-generated for every service up front.
+async function showBusRoute(serviceNo, direction) {
+    clearSelectedRoute();
+    const requestId = activeRouteRequestId;
+
+    routeInfoText.textContent = `Computing route for Bus Service ${serviceNo}…`;
+    routeInfoBanner.hidden = false;
+
+    const cacheKey = `${serviceNo}|${direction}`;
+    let geometry = routeGeometryCache[cacheKey];
+
+    if (!geometry) {
+        try {
+            const response = await fetch(`/api/route-geometry?serviceNo=${encodeURIComponent(serviceNo)}&direction=${encodeURIComponent(direction)}`);
+            const data = await response.json();
+            if (data.error) throw new Error(data.error);
+            geometry = data.value;
+            routeGeometryCache[cacheKey] = geometry;
+        } catch (error) {
+            if (requestId !== activeRouteRequestId) return; // superseded by a newer click/clear
+            routeInfoText.textContent = `Could not compute route for Bus Service ${serviceNo}: ${error.message}`;
+            return;
+        }
+    }
+
+    if (requestId !== activeRouteRequestId) return; // superseded by a newer click/clear
+
+    const coordinates = geometry ? geometry.coordinates : null;
+    if (!coordinates || coordinates.length < 2) {
+        routeInfoText.textContent = `No route geometry available for Bus Service ${serviceNo}.`;
+        return;
+    }
+
+    map.addSource(ROUTE_SOURCE_ID, {
+        type: 'geojson',
+        data: { type: 'Feature', geometry: { type: 'LineString', coordinates } }
+    });
+
+    map.addLayer({
+        id: ROUTE_LINE_LAYER_ID,
+        type: 'line',
+        source: ROUTE_SOURCE_ID,
+        layout: { 'line-join': 'round', 'line-cap': 'round' },
+        paint: { 'line-color': '#f59e0b', 'line-width': 4, 'line-opacity': 0.9 }
+    });
+
+    map.addLayer({
+        id: ROUTE_ARROW_LAYER_ID,
+        type: 'symbol',
+        source: ROUTE_SOURCE_ID,
+        layout: {
+            'symbol-placement': 'line',
+            'symbol-spacing': 80,
+            'text-field': '▶',
+            'text-size': 12,
+            'text-keep-upright': false,
+            'text-rotation-alignment': 'map',
+            'text-allow-overlap': true,
+            'text-ignore-placement': true
+        },
+        paint: { 'text-color': '#f59e0b', 'text-halo-color': '#ffffff', 'text-halo-width': 1 }
+    });
+
+    // Only the stops this specific service/direction actually calls at —
+    // not every bus stop in Singapore.
+    if (Array.isArray(geometry.stops) && geometry.stops.length > 0) {
+        map.addSource(ROUTE_STOPS_SOURCE_ID, {
+            type: 'geojson',
+            data: {
+                type: 'FeatureCollection',
+                features: geometry.stops.map(stop => ({
+                    type: 'Feature',
+                    geometry: { type: 'Point', coordinates: stop.coordinates },
+                    properties: { busStopCode: stop.code, description: stop.description }
+                }))
+            }
+        });
+        map.addLayer({
+            id: ROUTE_STOPS_LAYER_ID,
+            type: 'circle',
+            source: ROUTE_STOPS_SOURCE_ID,
+            paint: {
+                'circle-radius': ['interpolate', ['linear'], ['zoom'], 11, 2, 18, 6],
+                'circle-color': '#e63946',
+                'circle-stroke-width': 1,
+                'circle-stroke-color': '#fff'
+            }
+        });
+    }
+
+    addRouteMarker(coordinates[0], 'S', '#16a34a');
+    addRouteMarker(coordinates[coordinates.length - 1], 'E', '#dc2626');
+
+    const lngs = coordinates.map(c => c[0]);
+    const lats = coordinates.map(c => c[1]);
+    map.fitBounds([[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]], { padding: 60 });
+
+    routeInfoText.textContent = `Bus Service ${serviceNo}`
+        + (geometry.startName && geometry.endName ? `, ${geometry.startName} → ${geometry.endName}` : '');
+    routeInfoBanner.hidden = false;
+}
 
 function normalizeStationName(name) {
     return String(name || '')
@@ -72,6 +264,17 @@ function polygonCentroid(coordinates) {
     return [x / ring.length, y / ring.length];
 }
 
+function applyMrtStationsVisibility() {
+    ['mrt-stations-layer', 'mrt-stations-label'].forEach(id => {
+        if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', mrtStationsVisible ? 'visible' : 'none');
+    });
+}
+
+document.getElementById('toggle-mrt-stations').addEventListener('change', (e) => {
+    mrtStationsVisible = e.target.checked;
+    applyMrtStationsVisibility();
+});
+
 function renderConnections(normName, displayName, lines) {
     currentStationConnections = connectionsData[normName] || null;
     detailName.textContent = displayName;
@@ -84,47 +287,208 @@ function renderConnections(normName, displayName, lines) {
 
 function drawConnectionsList(filterText) {
     detailConnections.innerHTML = '';
-    if (!currentStationConnections) {
+    const boardingPoints = currentStationConnections ? (currentStationConnections.boardingPoints || []) : [];
+    if (boardingPoints.length === 0) {
         detailConnections.innerHTML = '<p class="empty-note">No free boarding/alighting points on record for this station.</p>';
         return;
     }
-    const entries = Object.values(currentStationConnections.connections || {})
-        .sort((a, b) => a.displayName.localeCompare(b.displayName));
 
-    const filtered = filterText
-        ? entries.filter(e => e.displayName.toLowerCase().includes(filterText.toLowerCase()))
-        : entries;
+    const needle = filterText.toLowerCase();
+    let anyRendered = false;
 
-    if (filtered.length === 0) {
-        detailConnections.innerHTML = '<p class="empty-note">No matching destination stations.</p>';
-        return;
+    for (const boardingPoint of boardingPoints) {
+        const destinations = needle
+            ? boardingPoint.destinations.filter(d => d.displayName.toLowerCase().includes(needle))
+            : boardingPoint.destinations;
+
+        // While searching, skip boarding points with no matching destination.
+        // Otherwise show every boarding point, even ones with no known connections.
+        if (needle && destinations.length === 0) continue;
+        anyRendered = true;
+
+        const group = document.createElement('div');
+        group.className = 'boarding-point-group';
+
+        const destRowsHtml = destinations.length > 0
+            ? destinations.map(dest => {
+                const services = dest.services.map(s =>
+                    `<span class="service-chip" data-service-no="${s.serviceNo}" data-direction="${s.direction}" ` +
+                    `title="Click to show this route on the map">` +
+                    `${s.serviceNo}<span class="service-chip-stops">(${s.numStops} stop${s.numStops === 1 ? '' : 's'})</span></span>`
+                ).join('');
+                return `
+                    <div class="connection-row">
+                        <div class="connection-dest">
+                            <strong>${dest.displayName}</strong>
+                            ${dest.lines.map(l => `<span class="line-badge small">${l}</span>`).join('')}
+                        </div>
+                        <div class="connection-services">${services}</div>
+                    </div>
+                `;
+            }).join('')
+            : '<p class="empty-note">No known connections from this stop.</p>';
+
+        const boardingPointName = boardingPoint.name
+            ? `<span class="boarding-point-name">${boardingPoint.name}</span>`
+            : '';
+        group.innerHTML = `
+            <div class="boarding-point-header">Boarding point <span class="boarding-point-code">${boardingPoint.code}</span>${boardingPointName}</div>
+            ${destRowsHtml}
+        `;
+        detailConnections.appendChild(group);
     }
 
-    for (const dest of filtered) {
-        const row = document.createElement('div');
-        row.className = 'connection-row';
-        const services = dest.services.map(s => `<span class="service-chip" title="Board ${s.boardStopCode} → Alight ${s.alightStopCode}">${s.serviceNo}</span>`).join('');
-        row.innerHTML = `
-            <div class="connection-dest">
-                <strong>${dest.displayName}</strong>
-                ${dest.lines.map(l => `<span class="line-badge small">${l}</span>`).join('')}
-            </div>
-            <div class="connection-services">${services}</div>
-        `;
-        detailConnections.appendChild(row);
+    if (!anyRendered) {
+        detailConnections.innerHTML = '<p class="empty-note">No matching destination stations.</p>';
     }
 }
 
 detailFilter.addEventListener('input', () => drawConnectionsList(detailFilter.value.trim()));
 
+detailConnections.addEventListener('click', (e) => {
+    const chip = e.target.closest('.service-chip');
+    if (!chip) return;
+    const { serviceNo, direction } = chip.dataset;
+    showBusRoute(serviceNo, Number(direction));
+});
+
+// Shared by clicking a dot on the map and by picking a station from search results.
+function selectMrtStation(feature) {
+    const { name, normName } = feature.properties;
+    renderConnections(normName, connectionsData[normName] ? connectionsData[normName].displayName : name, connectionsData[normName] ? connectionsData[normName].lines : []);
+
+    map.flyTo({ center: feature.geometry.coordinates, zoom: Math.max(map.getZoom(), 14) });
+
+    if (activePopup) activePopup.remove();
+    activePopup = new mapboxgl.Popup({ offset: 12 })
+        .setLngLat(feature.geometry.coordinates)
+        .setHTML(`<strong>${name}</strong>`)
+        .addTo(map);
+}
+
+function getBusStopDescription(busStopCode) {
+    return (busStopCode && busStopDescriptions[busStopCode]) || null;
+}
+
+// --- Global search: bus service number or MRT station name -----------------
+const searchInput = document.getElementById('global-search-input');
+const searchSuggestions = document.getElementById('search-suggestions');
+
+function closeSearchSuggestions() {
+    searchSuggestions.hidden = true;
+    searchSuggestions.innerHTML = '';
+}
+
+function getSearchSuggestions(query) {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return [];
+
+    const stationMatches = mrtStationFeatures
+        .filter(f => f.properties.name.toLowerCase().includes(needle))
+        .slice(0, 4)
+        .map(f => ({ type: 'station', feature: f }));
+
+    // One row per direction, so a service with 2 directions yields 2 selectable results.
+    const serviceMatches = busServiceRecords
+        .filter(r => r.ServiceNo.toLowerCase().includes(needle))
+        .slice(0, 6)
+        .map(r => ({
+            type: 'bus',
+            serviceNo: r.ServiceNo,
+            direction: r.Direction,
+            originName: getBusStopDescription(r.OriginCode) || r.OriginCode,
+            destName: getBusStopDescription(r.DestinationCode) || r.DestinationCode
+        }));
+
+    // Kept small enough that a typical (specific) search never needs to scroll —
+    // only very broad queries (e.g. a single digit) will fill the dropdown's
+    // own scrollable area.
+    return [...stationMatches, ...serviceMatches].slice(0, 6);
+}
+
+function renderSearchSuggestions(query) {
+    const suggestions = getSearchSuggestions(query);
+    if (suggestions.length === 0) {
+        closeSearchSuggestions();
+        return;
+    }
+
+    searchSuggestions.innerHTML = suggestions.map(s => {
+        if (s.type === 'station') {
+            return `<div class="suggestion-item" data-type="station" data-norm-name="${s.feature.properties.normName}">` +
+                `<span class="suggestion-badge suggestion-badge-mrt">MRT</span>` +
+                `<span class="suggestion-label">${s.feature.properties.name}</span>` +
+                `</div>`;
+        }
+        return `<div class="suggestion-item" data-type="bus" data-service-no="${s.serviceNo}" data-direction="${s.direction}">` +
+            `<span class="suggestion-badge suggestion-badge-bus">BUS</span>` +
+            `<span class="suggestion-label">${s.serviceNo}<span class="suggestion-sub">${s.originName} → ${s.destName}</span></span>` +
+            `</div>`;
+    }).join('');
+    searchSuggestions.hidden = false;
+}
+
+function selectSearchSuggestion(item) {
+    if (item.dataset.type === 'station') {
+        const feature = mrtStationFeatures.find(f => f.properties.normName === item.dataset.normName);
+        if (feature) selectMrtStation(feature);
+    } else if (item.dataset.type === 'bus') {
+        showBusRoute(item.dataset.serviceNo, Number(item.dataset.direction));
+    }
+    searchInput.value = '';
+    closeSearchSuggestions();
+}
+
+searchInput.addEventListener('input', () => renderSearchSuggestions(searchInput.value));
+
+searchInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+        searchInput.blur();
+        closeSearchSuggestions();
+    } else if (e.key === 'Enter') {
+        const firstItem = searchSuggestions.querySelector('.suggestion-item');
+        if (firstItem) selectSearchSuggestion(firstItem);
+    }
+});
+
+// Suggestions are dismissed on blur, but a plain click (not mousedown) on a
+// suggestion would fire after that blur has already hidden the list — so
+// selection happens on mousedown, with the default prevented to keep focus.
+searchSuggestions.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    const item = e.target.closest('.suggestion-item');
+    if (item) selectSearchSuggestion(item);
+});
+
+searchInput.addEventListener('blur', () => {
+    setTimeout(closeSearchSuggestions, 150);
+});
+
 async function loadData() {
-    const [stationsRes, connectionsRes] = await Promise.all([
+    const [stationsRes, connectionsRes, busStopsRes, busServicesRes] = await Promise.all([
         fetch('/api/mrt-stations').then(r => r.json()),
-        fetch('/api/mrt-connections').then(r => r.json())
+        fetch('/api/mrt-connections').then(r => r.json()),
+        fetch('/api/bus-stops').then(r => r.json()).catch(err => ({ error: err.message })),
+        fetch('/api/bus-services').then(r => r.json()).catch(err => ({ error: err.message }))
     ]);
 
     if (stationsRes.error) throw new Error(stationsRes.error);
     if (connectionsRes.error) throw new Error(connectionsRes.error);
+
+    if (busServicesRes && !busServicesRes.error && Array.isArray(busServicesRes.value)) {
+        busServiceRecords = busServicesRes.value;
+    } else if (busServicesRes && busServicesRes.error) {
+        console.error('Failed to load bus services:', busServicesRes.error);
+    }
+
+    if (busStopsRes && !busStopsRes.error && Array.isArray(busStopsRes.value)) {
+        busStopDescriptions = {};
+        for (const stop of busStopsRes.value) {
+            busStopDescriptions[stop.BusStopCode] = stop.Description;
+        }
+    } else if (busStopsRes && busStopsRes.error) {
+        console.error('Failed to load bus stops:', busStopsRes.error);
+    }
 
     connectionsData = connectionsRes.value || {};
     const geojson = stationsRes.value;
@@ -135,7 +499,7 @@ async function loadData() {
 
     const pointFeatures = geojson.features.map(f => {
         const normName = normalizeStationName(f.properties.STN_NAM_DE);
-        const hasConnections = Boolean(connectionsData[normName] && Object.keys(connectionsData[normName].connections || {}).length > 0);
+        const hasConnections = stationHasConnections(connectionsData[normName]);
         return {
             type: 'Feature',
             geometry: { type: 'Point', coordinates: polygonCentroid(f.geometry.coordinates) },
@@ -147,6 +511,7 @@ async function loadData() {
         };
     });
 
+    mrtStationFeatures = pointFeatures;
     map.addSource('mrt-stations', { type: 'geojson', data: { type: 'FeatureCollection', features: pointFeatures } });
 
     map.addLayer({
@@ -182,17 +547,9 @@ async function loadData() {
     map.on('mouseenter', 'mrt-stations-layer', () => { map.getCanvas().style.cursor = 'pointer'; });
     map.on('mouseleave', 'mrt-stations-layer', () => { map.getCanvas().style.cursor = ''; });
 
-    map.on('click', 'mrt-stations-layer', (e) => {
-        const feature = e.features[0];
-        const { name, normName } = feature.properties;
-        renderConnections(normName, connectionsData[normName] ? connectionsData[normName].displayName : name, connectionsData[normName] ? connectionsData[normName].lines : []);
+    map.on('click', 'mrt-stations-layer', (e) => selectMrtStation(e.features[0]));
 
-        if (activePopup) activePopup.remove();
-        activePopup = new mapboxgl.Popup({ offset: 12 })
-            .setLngLat(feature.geometry.coordinates)
-            .setHTML(`<strong>${name}</strong>`)
-            .addTo(map);
-    });
+    applyMrtStationsVisibility();
 
     const matched = pointFeatures.filter(f => f.properties.hasConnections).length;
     statusLine.textContent = `${pointFeatures.length} MRT stations loaded (${matched} with known bus connections). Click a station to explore.`;
