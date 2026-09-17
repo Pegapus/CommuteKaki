@@ -765,12 +765,20 @@ async function fetchTrainAlerts() {
         const response = await fetch('/api/train-alerts');
         const data = await response.json();
         
-        if (data && data.value && data.value.Status === 2) {
-            const toggle = document.getElementById('train-alerts-toggle');
-            const banner = document.getElementById('train-alerts-banner');
-            const titleEl = document.getElementById('train-alerts-title');
-            const textEl = document.getElementById('train-alerts-text');
+        const toggle = document.getElementById('train-alerts-toggle');
+        const banner = document.getElementById('train-alerts-banner');
+        const titleEl = document.getElementById('train-alerts-title');
+        const textEl = document.getElementById('train-alerts-text');
+        
+        if (data && data.value && (data.value.Status === 1 || data.value.Status === 2)) {
+            const statusClass = data.value.Status === 1 ? 'status-1' : 'status-2';
+            banner.className = '';
+            banner.classList.add(statusClass);
             
+            toggle.className = '';
+            toggle.classList.add(statusClass);
+            toggle.style.background = data.value.Status === 1 ? '#eab308' : '#ef4444';
+
             let messageHtml = '';
             if (data.value.Message && data.value.Message.length > 0) {
                 messageHtml = data.value.Message.map(m => `<div style="margin-bottom: 4px;">${m.Content}</div>`).join('');
@@ -783,32 +791,49 @@ async function fetchTrainAlerts() {
                 titleEl.innerHTML = `<strong>Train Service Alert</strong>`;
             }
             
-            textEl.innerHTML = messageHtml || 'Train service is currently disrupted.';
-            
-            // Show toggle button
+            textEl.innerHTML = messageHtml || 'Train service is experiencing delays/disruptions.';
             toggle.hidden = false;
-            // Initially show banner too
-            banner.hidden = false;
-            
-            toggle.addEventListener('click', () => {
-                banner.hidden = !banner.hidden;
-            });
-
-            document.getElementById('train-alerts-close').addEventListener('click', () => {
-                banner.hidden = true;
-            });
+        } else {
+            // Hide the toggle and banner if there are no active alerts
+            toggle.hidden = true;
+            banner.hidden = true;
         }
     } catch (error) {
         console.error('Failed to fetch train alerts:', error);
     }
 }
 
+// Add event listeners for Train Service Alerts
+const alertsToggle = document.getElementById('train-alerts-toggle');
+const alertsBanner = document.getElementById('train-alerts-banner');
+
+alertsToggle.addEventListener('click', async () => {
+    // If we are about to open the banner, refresh the data first
+    if (alertsBanner.hidden) {
+        await fetchTrainAlerts();
+    }
+    // Only show if the toggle is still visible (meaning we still have an active alert after refresh)
+    if (!alertsToggle.hidden) {
+        alertsBanner.hidden = !alertsBanner.hidden;
+    }
+});
+
+document.getElementById('train-alerts-close').addEventListener('click', () => {
+    alertsBanner.hidden = true;
+});
+
 map.on('load', () => {
     loadData().catch(err => {
         statusLine.textContent = 'Failed to load data: ' + err.message;
         console.error(err);
     });
-    fetchTrainAlerts();
+    
+    // Initial fetch, and if it yields an alert, we can also auto-show the banner
+    fetchTrainAlerts().then(() => {
+        if (!alertsToggle.hidden) {
+            alertsBanner.hidden = false;
+        }
+    });
 });
 </script>
 </body>

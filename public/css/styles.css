@@ -60,7 +60,11 @@ html, body {
     gap: 6px;
 }
 
-#train-alerts-toggle:hover {
+#train-alerts-toggle.status-1:hover {
+    background: #ca8a04;
+}
+
+#train-alerts-toggle.status-2:hover {
     background: #dc2626;
 }
 
@@ -73,8 +77,6 @@ html, body {
     top: 60px;
     right: 52px;
     width: 320px;
-    background: #fef2f2;
-    border-left: 4px solid #ef4444;
     border-radius: 8px;
     box-shadow: 0 4px 18px rgba(0, 0, 0, 0.15);
     padding: 12px 14px;
@@ -82,6 +84,16 @@ html, body {
     display: flex;
     align-items: flex-start;
     gap: 10px;
+}
+
+#train-alerts-banner.status-1 {
+    background: #fefce8;
+    border-left: 4px solid #eab308;
+}
+
+#train-alerts-banner.status-2 {
+    background: #fef2f2;
+    border-left: 4px solid #ef4444;
 }
 
 #train-alerts-banner[hidden] {
@@ -98,30 +110,57 @@ html, body {
 }
 
 #train-alerts-title {
-    color: #991b1b;
     font-size: 14px;
     margin-bottom: 4px;
 }
 
+.status-1 #train-alerts-title {
+    color: #a16207;
+}
+
+.status-2 #train-alerts-title {
+    color: #991b1b;
+}
+
 #train-alerts-text {
     font-size: 12.5px;
-    color: #b91c1c;
     line-height: 1.4;
+}
+
+.status-1 #train-alerts-text {
+    color: #854d0e;
+}
+
+.status-2 #train-alerts-text {
+    color: #b91c1c;
 }
 
 #train-alerts-close {
     border: none;
     background: none;
-    color: #ef4444;
     font-size: 20px;
     line-height: 1;
     cursor: pointer;
     padding: 0;
 }
 
-#train-alerts-close:hover {
+.status-1 #train-alerts-close {
+    color: #eab308;
+}
+
+.status-1 #train-alerts-close:hover {
+    color: #a16207;
+}
+
+.status-2 #train-alerts-close {
+    color: #ef4444;
+}
+
+.status-2 #train-alerts-close:hover {
     color: #991b1b;
 }
+
+
 
 #panel {
     position: absolute;
