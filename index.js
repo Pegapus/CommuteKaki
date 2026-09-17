@@ -465,6 +465,16 @@ app.get('/api/mrt-connections', async (req, res) => {
     }
 });
 
+const { getStationCrowdDensity } = require('./models/StationCrowdDensity');
+app.get('/api/mrt-crowd-density', async (req, res) => {
+    try {
+        const densityData = await getStationCrowdDensity();
+        res.json({ value: densityData });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 async function bootstrap() {
     try {
         const emptyDatabase = await isDatabaseEmpty();

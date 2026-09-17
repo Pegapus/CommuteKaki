@@ -17,9 +17,31 @@
     <p id="panel-subtitle">Click an MRT station to see bus services connecting it to another station via free boarding/alighting points.</p>
 </div>
 
-<div id="panels-container">
-    <div id="p2p-panel" class="collapsible-panel collapsed">
-        <button id="p2p-panel-toggle" class="panel-toggle" title="Toggle P2P Routing">❯</button>
+<div id="panel" class="collapsible-panel collapsed">
+    <button id="panel-toggle" class="panel-toggle" title="Toggle Panel">❯</button>
+    <div class="panel-tabs">
+        <button id="tab-search" class="panel-tab active">Explore & Search</button>
+        <button id="tab-p2p" class="panel-tab">Point-to-Point Route</button>
+    </div>
+    
+    <div id="tab-content-search" class="tab-content">
+        <div id="search-bar">
+            <input id="global-search-input" type="text" placeholder="Search bus service or MRT station…" autocomplete="off" />
+            <div id="search-suggestions" hidden></div>
+        </div>
+        <div id="panel-scroll">
+            <div id="status-line">Loading MRT stations…</div>
+            <div id="station-detail" hidden>
+                <button id="close-detail" title="Close">&times;</button>
+                <h2 id="detail-station-name"></h2>
+                <div id="detail-station-lines"></div>
+                <input id="detail-filter" type="text" placeholder="Filter destination stations…" />
+                <div id="detail-connections"></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="tab-content-p2p" class="tab-content" hidden>
         <div id="p2p-section">
             <div class="p2p-input-container">
                 <input id="p2p-origin-input" class="p2p-input" type="text" placeholder="Origin MRT station…" autocomplete="off" />
@@ -34,24 +56,6 @@
                 <button id="p2p-clear-btn" class="p2p-btn">Clear</button>
             </div>
             <div id="p2p-results"></div>
-        </div>
-    </div>
-
-    <div id="search-panel" class="collapsible-panel collapsed">
-        <button id="search-panel-toggle" class="panel-toggle" title="Toggle Search Panel">❯</button>
-        <div id="search-bar">
-            <input id="global-search-input" type="text" placeholder="Search bus service or MRT station…" autocomplete="off" />
-            <div id="search-suggestions" hidden></div>
-        </div>
-        <div id="panel-scroll">
-            <div id="status-line">Loading MRT stations…</div>
-            <div id="station-detail" hidden>
-                <button id="close-detail" title="Close">&times;</button>
-                <h2 id="detail-station-name"></h2>
-                <div id="detail-station-lines"></div>
-                <input id="detail-filter" type="text" placeholder="Filter destination stations…" />
-                <div id="detail-connections"></div>
-            </div>
         </div>
     </div>
 </div>
@@ -100,6 +104,7 @@ document.getElementById('close-detail').addEventListener('click', () => {
 });
 
 let connectionsData = {};
+let crowdDensityData = {};
 let currentStationConnections = null;
 let activePopup = null;
 let mrtStationsVisible = true;
@@ -382,10 +387,20 @@ function selectMrtStation(feature) {
 
     map.flyTo({ center: feature.geometry.coordinates, zoom: Math.max(map.getZoom(), 14) });
 
+    let crowdHtml = '';
+    if (crowdDensityData[normName]) {
+        const levels = { 'l': 'Low', 'm': 'Moderate', 'h': 'High' };
+        const colors = { 'l': '#16a34a', 'm': '#f59e0b', 'h': '#dc2626' };
+        const lvl = crowdDensityData[normName];
+        if (levels[lvl]) {
+            crowdHtml = `<div style="margin-top: 4px; font-size: 11px; color: ${colors[lvl]}; font-weight: 600;">Crowd Density: ${levels[lvl]}</div>`;
+        }
+    }
+
     if (activePopup) activePopup.remove();
     activePopup = new mapboxgl.Popup({ offset: 12 })
         .setLngLat(feature.geometry.coordinates)
-        .setHTML(`<strong>${name}</strong>`)
+        .setHTML(`<strong>${name}</strong>${crowdHtml}`)
         .addTo(map);
 }
 
@@ -488,18 +503,31 @@ searchInput.addEventListener('blur', () => {
 });
 
 // --- Panel Toggle -----------------
-const p2pPanel = document.getElementById('p2p-panel');
-const p2pPanelToggle = document.getElementById('p2p-panel-toggle');
-p2pPanelToggle.addEventListener('click', () => {
-    p2pPanel.classList.toggle('collapsed');
-    p2pPanelToggle.textContent = p2pPanel.classList.contains('collapsed') ? '❯' : '❮';
+const panel = document.getElementById('panel');
+const panelToggle = document.getElementById('panel-toggle');
+panelToggle.addEventListener('click', () => {
+    panel.classList.toggle('collapsed');
+    panelToggle.textContent = panel.classList.contains('collapsed') ? '❯' : '❮';
 });
 
-const searchPanel = document.getElementById('search-panel');
-const searchPanelToggle = document.getElementById('search-panel-toggle');
-searchPanelToggle.addEventListener('click', () => {
-    searchPanel.classList.toggle('collapsed');
-    searchPanelToggle.textContent = searchPanel.classList.contains('collapsed') ? '❯' : '❮';
+// --- Tab Switching ----------------
+const tabSearch = document.getElementById('tab-search');
+const tabP2p = document.getElementById('tab-p2p');
+const tabContentSearch = document.getElementById('tab-content-search');
+const tabContentP2p = document.getElementById('tab-content-p2p');
+
+tabSearch.addEventListener('click', () => {
+    tabSearch.classList.add('active');
+    tabP2p.classList.remove('active');
+    tabContentSearch.hidden = false;
+    tabContentP2p.hidden = true;
+});
+
+tabP2p.addEventListener('click', () => {
+    tabP2p.classList.add('active');
+    tabSearch.classList.remove('active');
+    tabContentP2p.hidden = false;
+    tabContentSearch.hidden = true;
 });
 
 // --- Point-to-Point Search -----------------
@@ -617,11 +645,12 @@ p2pResults.addEventListener('click', (e) => {
 });
 
 async function loadData() {
-    const [stationsRes, connectionsRes, busStopsRes, busServicesRes] = await Promise.all([
+    const [stationsRes, connectionsRes, busStopsRes, busServicesRes, crowdDensityRes] = await Promise.all([
         fetch('/api/mrt-stations').then(r => r.json()),
         fetch('/api/mrt-connections').then(r => r.json()),
         fetch('/api/bus-stops').then(r => r.json()).catch(err => ({ error: err.message })),
-        fetch('/api/bus-services').then(r => r.json()).catch(err => ({ error: err.message }))
+        fetch('/api/bus-services').then(r => r.json()).catch(err => ({ error: err.message })),
+        fetch('/api/mrt-crowd-density').then(r => r.json()).catch(err => ({ error: err.message }))
     ]);
 
     if (stationsRes.error) throw new Error(stationsRes.error);
@@ -640,6 +669,12 @@ async function loadData() {
         }
     } else if (busStopsRes && busStopsRes.error) {
         console.error('Failed to load bus stops:', busStopsRes.error);
+    }
+    
+    if (crowdDensityRes && !crowdDensityRes.error && crowdDensityRes.value) {
+        crowdDensityData = crowdDensityRes.value;
+    } else if (crowdDensityRes && crowdDensityRes.error) {
+        console.error('Failed to load crowd density:', crowdDensityRes.error);
     }
 
     connectionsData = connectionsRes.value || {};

@@ -59,7 +59,8 @@ async function fetchLTADatamallDataset({ endpoint, datasetName }) {
     let skip = 0;
 
     while (true) {
-        const requestUrl = `${BASE_URL}/ltaodataservice/${endpoint}?$skip=${skip}`;
+        const separator = endpoint.includes('?') ? '&' : '?';
+        const requestUrl = `${BASE_URL}/ltaodataservice/${endpoint}${separator}$skip=${skip}`;
         console.log(`Fetching ${datasetName}: ${requestUrl}`);
 
         const payload = await httpsGetJson(requestUrl, headers);
