@@ -19,7 +19,6 @@ try {
 
 const express = require("express");
 const morgan = require('morgan');
-const ExcelJS = require('exceljs');
 const app = express();
 const port = process.env.PORT || 3000;
 
@@ -31,6 +30,7 @@ const { getMrtStations } = require('./models/MRTStations');
 const { getBusRoutes } = require('./models/LTADatamallBusRoutes');
 const { getBusStops } = require('./models/LTADatamallBusStops');
 const { getBusServices } = require('./models/LTADatamallBusServices');
+const { getBridgingPoints } = require('./models/BridgingPoints');
 const { isDatabaseEmpty, disconnect } = require('./configs/database');
 
 // ---------------------------------------------------------------------------
@@ -168,63 +168,11 @@ async function computeRouteGeometry(serviceNo, direction) {
 }
 
 // ---------------------------------------------------------------------------
-// Bridging / Free Boarding Points sheet
+// Bridging / Free Boarding Points
 //
-// The sheet ("Bridging/Free Boarding Points of Destination Station") lists,
-// per MRT station, the bus stop codes near it that count as a free
-// boarding/alighting point during a bus bridging service. There is a single
-// list per station (not separate "boarding" and "alighting" sheets) — the
-// same stops serve as the boarding end for a trip in one direction and the
-// alighting end for a trip in the other, which is exactly what's needed to
-// answer "what services connect station A to station B".
+// The data is fetched from the database, populated from a Google Sheet by
+// running `npm run fetch-bridging-points`.
 // ---------------------------------------------------------------------------
-async function fetchBridgingPointsSheet(sheetId) {
-    const url = `https://docs.google.com/spreadsheets/d/${encodeURIComponent(sheetId)}/export?format=xlsx`;
-    const response = await fetch(url);
-    if (!response.ok) {
-        throw new Error(`Google Sheets returned ${response.status}. Ensure the sheet is publicly shared or the ID is correct.`);
-    }
-    const buffer = Buffer.from(await response.arrayBuffer());
-
-    const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.load(buffer);
-    const worksheet = workbook.worksheets[0];
-    if (!worksheet) {
-        throw new Error('Bridging points sheet has no worksheets.');
-    }
-
-    const maxCol = worksheet.columnCount || 1;
-    const rows = [];
-    // Rows 1-5 are title/legend, row 6 is the "Line | Station | BS/BI Code" header.
-    worksheet.eachRow({ includeEmpty: true }, (row, rowNumber) => {
-        if (rowNumber < 7) return;
-        const line = String(row.getCell(1).text || '').trim();
-        const station = String(row.getCell(2).text || '').trim();
-        if (!station) return;
-        const codes = [];
-        for (let c = 3; c <= maxCol; c++) {
-            const cellText = String(row.getCell(c).text || '').trim();
-            if (!cellText) continue;
-            
-            cellText.split(/[,;\s\/]+/).forEach(part => {
-                const trimmed = part.trim();
-                if (!trimmed) return;
-                
-                if (/^\d{4,5}$/.test(trimmed)) {
-                    codes.push(trimmed.padStart(5, '0'));
-                } else {
-                    codes.push(trimmed);
-                }
-            });
-        }
-        if (codes.length) rows.push({ line, station, codes });
-    });
-
-    if (rows.length === 0) {
-        throw new Error('No station/bus-stop rows found in bridging points sheet (expected data starting row 7).');
-    }
-    return rows;
-}
 
 // Strips the "MRT STATION"/"LRT STATION" suffix LTA's dataset uses so sheet
 // station names ("Jurong East") line up with GeoJSON ones ("JURONG EAST MRT STATION").
@@ -242,22 +190,24 @@ function normalizeStationName(name) {
 // sequence passes a free-boarding stop of station A before (or after) a
 // free-boarding stop of station B.
 function buildConnectionsIndex(bridgingRows, busRoutesDocs, mrtFeatures, busStopInfo) {
-    const stations = new Map(); // normName -> { displayName, lines:Set, codes:Set }
+    const stations = new Map(); // normName -> { displayName, lines:Set, codes: Map(code -> type) }
     for (const row of bridgingRows) {
         const normName = normalizeStationName(row.station);
         if (!stations.has(normName)) {
-            stations.set(normName, { displayName: row.station, lines: new Set(), codes: new Set() });
+            stations.set(normName, { displayName: row.station, lines: new Set(), codes: new Map() });
         }
         const entry = stations.get(normName);
         if (row.line) entry.lines.add(row.line);
-        for (const code of row.codes) entry.codes.add(String(code));
+        for (const c of row.codes) {
+            entry.codes.set(String(c.code), c.type);
+        }
     }
 
-    const codeToStations = new Map(); // code -> Set(normName)
+    const codeToStations = new Map(); // code -> Set({normName, type})
     for (const [normName, entry] of stations) {
-        for (const code of entry.codes) {
+        for (const [code, type] of entry.codes) {
             if (!codeToStations.has(code)) codeToStations.set(code, new Set());
-            codeToStations.get(code).add(normName);
+            codeToStations.get(code).add({ normName, type });
         }
     }
 
@@ -297,10 +247,10 @@ function buildConnectionsIndex(bridgingRows, busRoutesDocs, mrtFeatures, busStop
         const touched = [];
         for (const stop of sorted) {
             const code = String(stop.BusStopCode);
-            const names = codeToStations.get(code);
-            if (!names) continue;
-            for (const normName of names) {
-                touched.push({ code, normName, seq: Number(stop.StopSequence) });
+            const stationEntries = codeToStations.get(code);
+            if (!stationEntries) continue;
+            for (const entry of stationEntries) {
+                touched.push({ code, normName: entry.normName, type: entry.type, seq: Number(stop.StopSequence) });
             }
         }
 
@@ -313,8 +263,12 @@ function buildConnectionsIndex(bridgingRows, busRoutesDocs, mrtFeatures, busStop
         }
 
         for (let i = 0; i < collapsed.length; i++) {
+            // Only allow boarding at 'both' (yellow) bus stops
+            if (collapsed[i].type !== 'both') continue;
+
             for (let j = i + 1; j < collapsed.length; j++) {
                 if (collapsed[i].normName === collapsed[j].normName) continue;
+                // Alighting is allowed at 'both' (yellow) or 'alight_only' (green)
                 addConnection(collapsed[i].normName, collapsed[i].code, collapsed[j].normName, {
                     serviceNo,
                     direction,
@@ -336,7 +290,11 @@ function buildConnectionsIndex(bridgingRows, busRoutesDocs, mrtFeatures, busStop
     const stationsOut = {};
     for (const [normName, entry] of stations) {
         const byBoard = connections.get(normName) || new Map();
-        const boardingPoints = [...entry.codes].sort().map((code) => {
+        const boardingPoints = [...entry.codes]
+            .filter(([code, type]) => type === 'both')
+            .map(([code, type]) => code)
+            .sort()
+            .map((code) => {
             const byDest = byBoard.get(code) || new Map();
             const destinations = [...byDest.entries()].map(([toNorm, byService]) => {
                 const toEntry = stations.get(toNorm);
@@ -378,7 +336,7 @@ async function getConnectionsIndex() {
     if (connectionsIndexCache) return connectionsIndexCache;
 
     const [bridgingRows, busRoutesDocs, mrtGeojson, busStopInfo] = await Promise.all([
-        fetchBridgingPointsSheet(process.env.BRIDGING_POINTS_SHEET_ID),
+        getBridgingPoints(),
         getBusRoutes(),
         getMrtStations(),
         getBusStopInfoMap()
