@@ -13,7 +13,10 @@
 <div id="map"></div>
 
 <div id="header-panel">
-    <h1>Smart Commuter Companion</h1>
+    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 4px;">
+        <h1 style="margin: 0;">Smart Commuter Companion</h1>
+        <button id="refresh-crowd-btn" class="p2p-btn" style="padding: 4px 8px; font-size: 11px; background: #1d4ed8; color: #fff; flex: 0 0 auto; margin-left: 8px;">Refresh Crowd</button>
+    </div>
     <p id="panel-subtitle">Click an MRT station to see bus services connecting it to another station via free boarding/alighting points.</p>
 </div>
 
@@ -608,6 +611,32 @@ p2pResults.addEventListener('click', (e) => {
     if (!chip) return;
     const { serviceNo, direction } = chip.dataset;
     showBusRoute(serviceNo, Number(direction));
+});
+
+document.getElementById('refresh-crowd-btn').addEventListener('click', async () => {
+    const btn = document.getElementById('refresh-crowd-btn');
+    btn.textContent = 'Refreshing...';
+    btn.disabled = true;
+    try {
+        const crowdDensityRes = await fetch('/api/mrt-crowd-density').then(r => r.json());
+        if (crowdDensityRes && !crowdDensityRes.error && crowdDensityRes.value) {
+            crowdDensityData = crowdDensityRes.value;
+            // Update the point features array with the new crowd density data
+            mrtStationFeatures = mrtStationFeatures.map(f => {
+                const normName = f.properties.normName;
+                f.properties.crowdDensity = crowdDensityData[normName] || 'none';
+                return f;
+            });
+            // Update the map source to redraw the layer colors
+            if (map.getSource('mrt-stations')) {
+                map.getSource('mrt-stations').setData({ type: 'FeatureCollection', features: mrtStationFeatures });
+            }
+        }
+    } catch (err) {
+        console.error('Failed to refresh crowd density:', err.message);
+    }
+    btn.textContent = 'Refresh Crowd';
+    btn.disabled = false;
 });
 
 async function loadData() {
