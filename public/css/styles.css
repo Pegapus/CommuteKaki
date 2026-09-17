@@ -43,10 +43,10 @@ html, body {
 
 #panel {
     position: absolute;
-    top: 130px;
+    top: 160px;
     left: 16px;
     width: 340px;
-    max-height: calc(100vh - 146px);
+    max-height: calc(100vh - 176px);
     z-index: 5;
 }
 
