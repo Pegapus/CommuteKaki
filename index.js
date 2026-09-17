@@ -30,6 +30,7 @@ const { getMrtStations } = require('./models/MRTStations');
 const { getBusRoutes } = require('./models/LTADatamallBusRoutes');
 const { getBusStops } = require('./models/LTADatamallBusStops');
 const { getBusServices } = require('./models/LTADatamallBusServices');
+const { getTrainServiceAlerts } = require('./models/TrainServiceAlerts');
 const { getBridgingPoints } = require('./models/BridgingPoints');
 const { isDatabaseEmpty, disconnect } = require('./configs/database');
 
@@ -254,26 +255,18 @@ function buildConnectionsIndex(bridgingRows, busRoutesDocs, mrtFeatures, busStop
             }
         }
 
-        // Collapse consecutive stops at the same station (e.g. two codes in a row).
-        const collapsed = [];
-        for (const t of touched) {
-            const last = collapsed[collapsed.length - 1];
-            if (last && last.normName === t.normName) continue;
-            collapsed.push(t);
-        }
-
-        for (let i = 0; i < collapsed.length; i++) {
+        for (let i = 0; i < touched.length; i++) {
             // Only allow boarding at 'both' (yellow) bus stops
-            if (collapsed[i].type !== 'both') continue;
+            if (touched[i].type !== 'both') continue;
 
-            for (let j = i + 1; j < collapsed.length; j++) {
-                if (collapsed[i].normName === collapsed[j].normName) continue;
+            for (let j = i + 1; j < touched.length; j++) {
+                if (touched[i].normName === touched[j].normName) continue;
                 // Alighting is allowed at 'both' (yellow) or 'alight_only' (green)
-                addConnection(collapsed[i].normName, collapsed[i].code, collapsed[j].normName, {
+                addConnection(touched[i].normName, touched[i].code, touched[j].normName, {
                     serviceNo,
                     direction,
-                    alightStopCode: collapsed[j].code,
-                    numStops: collapsed[j].seq - collapsed[i].seq
+                    alightStopCode: touched[j].code,
+                    numStops: touched[j].seq - touched[i].seq
                 });
             }
         }
@@ -428,6 +421,15 @@ app.get('/api/mrt-crowd-density', async (req, res) => {
     try {
         const densityData = await getStationCrowdDensity();
         res.json({ value: densityData });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.get('/api/train-alerts', async (req, res) => {
+    try {
+        const alertsData = await getTrainServiceAlerts();
+        res.json({ value: alertsData });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }

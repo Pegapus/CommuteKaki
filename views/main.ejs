@@ -17,7 +17,21 @@
         <h1 style="margin: 0;">Smart Commuter Companion</h1>
         <button id="refresh-crowd-btn" class="p2p-btn" style="padding: 4px 8px; font-size: 11px; background: #1d4ed8; color: #fff; flex: 0 0 auto; margin-left: 8px;">Refresh Crowd</button>
     </div>
+
     <p id="panel-subtitle">Click an MRT station to see bus services connecting it to another station via free boarding/alighting points.</p>
+</div>
+
+<button id="train-alerts-toggle" hidden title="Toggle Train Alerts">
+    ⚠️ Train Service Alert
+</button>
+
+<div id="train-alerts-banner" hidden>
+    <div class="alert-icon">⚠️</div>
+    <div class="alert-content">
+        <div id="train-alerts-title"><strong>Train Service Alert</strong></div>
+        <div id="train-alerts-text"></div>
+    </div>
+    <button id="train-alerts-close" title="Dismiss">&times;</button>
 </div>
 
 <div id="panel" class="collapsible-panel collapsed">
@@ -746,11 +760,55 @@ async function loadData() {
     statusLine.textContent = `${pointFeatures.length} MRT stations loaded (${matched} with known bus connections). Click a station to explore.`;
 }
 
+async function fetchTrainAlerts() {
+    try {
+        const response = await fetch('/api/train-alerts');
+        const data = await response.json();
+        
+        if (data && data.value && data.value.Status === 2) {
+            const toggle = document.getElementById('train-alerts-toggle');
+            const banner = document.getElementById('train-alerts-banner');
+            const titleEl = document.getElementById('train-alerts-title');
+            const textEl = document.getElementById('train-alerts-text');
+            
+            let messageHtml = '';
+            if (data.value.Message && data.value.Message.length > 0) {
+                messageHtml = data.value.Message.map(m => `<div style="margin-bottom: 4px;">${m.Content}</div>`).join('');
+            }
+            
+            if (data.value.AffectedSegments && data.value.AffectedSegments.length > 0) {
+                const affectedLines = data.value.AffectedSegments.map(s => s.Line).filter((v, i, a) => a.indexOf(v) === i);
+                titleEl.innerHTML = `<strong>Train Service Alert: ${affectedLines.join(', ')}</strong>`;
+            } else {
+                titleEl.innerHTML = `<strong>Train Service Alert</strong>`;
+            }
+            
+            textEl.innerHTML = messageHtml || 'Train service is currently disrupted.';
+            
+            // Show toggle button
+            toggle.hidden = false;
+            // Initially show banner too
+            banner.hidden = false;
+            
+            toggle.addEventListener('click', () => {
+                banner.hidden = !banner.hidden;
+            });
+
+            document.getElementById('train-alerts-close').addEventListener('click', () => {
+                banner.hidden = true;
+            });
+        }
+    } catch (error) {
+        console.error('Failed to fetch train alerts:', error);
+    }
+}
+
 map.on('load', () => {
     loadData().catch(err => {
         statusLine.textContent = 'Failed to load data: ' + err.message;
         console.error(err);
     });
+    fetchTrainAlerts();
 });
 </script>
 </body>
