@@ -17,43 +17,65 @@ html, body {
     right: 0;
 }
 
-#panel {
+#header-panel {
     position: absolute;
     top: 16px;
     left: 16px;
-    width: 340px;
-    max-height: calc(100vh - 32px);
     background: rgba(255, 255, 255, 0.97);
     border-radius: 10px;
     box-shadow: 0 4px 18px rgba(0, 0, 0, 0.18);
     padding: 16px;
     z-index: 5;
+    width: 340px;
+}
+
+#header-panel h1 {
+    margin: 0 0 4px;
+    font-size: 18px;
+}
+
+#panel-subtitle {
+    margin: 0;
+    font-size: 12.5px;
+    color: #4b5563;
+    line-height: 1.4;
+}
+
+#panels-container {
+    position: absolute;
+    /* Adjust top position to be below the new header panel.
+       Header height: roughly 16px (top) + 16px (padding-top) + 18px (h1) + 4px (margin) + ~35px (p) + 16px (padding-bottom) = ~105px.
+       Adding 16px gap = 121px. Using a calc based on fixed gap. */
+    top: 130px;
+    left: 16px;
+    width: 340px;
+    max-height: calc(100vh - 146px);
+    z-index: 5;
     display: flex;
     flex-direction: column;
-    /* The header/search-bar stay fixed; #panel-scroll below is the only part
-       that scrolls, so this box never needs to clip its own content — which
-       matters because the absolutely-positioned search-suggestions dropdown
-       is a child of #search-bar and must be free to overflow past this box
-       without getting cut off. */
+    gap: 16px;
+    pointer-events: none;
+}
+
+.collapsible-panel {
+    pointer-events: auto;
+    background: rgba(255, 255, 255, 0.97);
+    border-radius: 10px;
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.18);
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
     overflow: visible;
+    transition: transform 0.3s ease;
+    position: relative;
+    /* allow it to shrink so scroll works */
+    min-height: 0;
 }
 
 #panel-scroll {
     overflow-y: auto;
     flex: 1 1 auto;
     min-height: 0;
-}
-
-#panel-header h1 {
-    margin: 0 0 4px;
-    font-size: 18px;
-}
-
-#panel-subtitle {
-    margin: 0 0 12px;
-    font-size: 12.5px;
-    color: #4b5563;
-    line-height: 1.4;
 }
 
 #search-bar {
@@ -390,4 +412,99 @@ html, body {
     cursor: pointer;
     user-select: none;
     padding: 2px 0;
+}
+
+.collapsible-panel.collapsed {
+    transform: translateX(calc(-100% - 16px));
+}
+
+.panel-toggle {
+    position: absolute;
+    top: 16px;
+    right: -32px;
+    width: 32px;
+    height: 32px;
+    background: rgba(255, 255, 255, 0.97);
+    border: none;
+    border-radius: 0 8px 8px 0;
+    box-shadow: 4px 0 10px rgba(0, 0, 0, 0.1);
+    cursor: pointer;
+    font-size: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #4b5563;
+    z-index: -1;
+}
+
+.panel-toggle:hover {
+    background: #f3f4f6;
+}
+
+.p2p-suggestions {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    right: 0;
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
+    max-height: 200px;
+    overflow-y: auto;
+    z-index: 20;
+}
+.p2p-suggestions[hidden] {
+    display: none;
+}
+.p2p-input-container {
+    position: relative;
+    margin-bottom: 8px;
+}
+.p2p-input {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 13px;
+}
+.p2p-buttons {
+    display: flex;
+    gap: 8px;
+}
+.p2p-btn {
+    flex: 1;
+    padding: 8px;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+}
+#p2p-search-btn {
+    background: #1d4ed8;
+    color: #fff;
+}
+#p2p-search-btn:hover {
+    background: #1e40af;
+}
+#p2p-clear-btn {
+    background: #e5e7eb;
+    color: #374151;
+}
+#p2p-clear-btn:hover {
+    background: #d1d5db;
+}
+.divider {
+    border: 0;
+    border-top: 1px solid #e5e7eb;
+    margin: 16px 0;
+}
+#p2p-results {
+    margin-top: 12px;
+    max-height: 250px;
+    overflow-y: auto;
+}
+#p2p-results:empty {
+    display: none;
 }

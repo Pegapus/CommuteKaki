@@ -12,23 +12,46 @@
 
 <div id="map"></div>
 
-<div id="panel">
-    <div id="panel-header">
-        <h1>Smart Commuter Companion</h1>
-        <p id="panel-subtitle">Click an MRT station to see bus services connecting it to another station via free boarding/alighting points.</p>
+<div id="header-panel">
+    <h1>Smart Commuter Companion</h1>
+    <p id="panel-subtitle">Click an MRT station to see bus services connecting it to another station via free boarding/alighting points.</p>
+</div>
+
+<div id="panels-container">
+    <div id="p2p-panel" class="collapsible-panel collapsed">
+        <button id="p2p-panel-toggle" class="panel-toggle" title="Toggle P2P Routing">❯</button>
+        <div id="p2p-section">
+            <div class="p2p-input-container">
+                <input id="p2p-origin-input" class="p2p-input" type="text" placeholder="Origin MRT station…" autocomplete="off" />
+                <div id="p2p-origin-suggestions" class="p2p-suggestions" hidden></div>
+            </div>
+            <div class="p2p-input-container">
+                <input id="p2p-dest-input" class="p2p-input" type="text" placeholder="Destination MRT station…" autocomplete="off" />
+                <div id="p2p-dest-suggestions" class="p2p-suggestions" hidden></div>
+            </div>
+            <div class="p2p-buttons">
+                <button id="p2p-search-btn" class="p2p-btn">Search Route</button>
+                <button id="p2p-clear-btn" class="p2p-btn">Clear</button>
+            </div>
+            <div id="p2p-results"></div>
+        </div>
     </div>
-    <div id="search-bar">
-        <input id="global-search-input" type="text" placeholder="Search bus service or MRT station…" autocomplete="off" />
-        <div id="search-suggestions" hidden></div>
-    </div>
-    <div id="panel-scroll">
-        <div id="status-line">Loading MRT stations…</div>
-        <div id="station-detail" hidden>
-            <button id="close-detail" title="Close">&times;</button>
-            <h2 id="detail-station-name"></h2>
-            <div id="detail-station-lines"></div>
-            <input id="detail-filter" type="text" placeholder="Filter destination stations…" />
-            <div id="detail-connections"></div>
+
+    <div id="search-panel" class="collapsible-panel collapsed">
+        <button id="search-panel-toggle" class="panel-toggle" title="Toggle Search Panel">❯</button>
+        <div id="search-bar">
+            <input id="global-search-input" type="text" placeholder="Search bus service or MRT station…" autocomplete="off" />
+            <div id="search-suggestions" hidden></div>
+        </div>
+        <div id="panel-scroll">
+            <div id="status-line">Loading MRT stations…</div>
+            <div id="station-detail" hidden>
+                <button id="close-detail" title="Close">&times;</button>
+                <h2 id="detail-station-name"></h2>
+                <div id="detail-station-lines"></div>
+                <input id="detail-filter" type="text" placeholder="Filter destination stations…" />
+                <div id="detail-connections"></div>
+            </div>
         </div>
     </div>
 </div>
@@ -462,6 +485,135 @@ searchSuggestions.addEventListener('mousedown', (e) => {
 
 searchInput.addEventListener('blur', () => {
     setTimeout(closeSearchSuggestions, 150);
+});
+
+// --- Panel Toggle -----------------
+const p2pPanel = document.getElementById('p2p-panel');
+const p2pPanelToggle = document.getElementById('p2p-panel-toggle');
+p2pPanelToggle.addEventListener('click', () => {
+    p2pPanel.classList.toggle('collapsed');
+    p2pPanelToggle.textContent = p2pPanel.classList.contains('collapsed') ? '❯' : '❮';
+});
+
+const searchPanel = document.getElementById('search-panel');
+const searchPanelToggle = document.getElementById('search-panel-toggle');
+searchPanelToggle.addEventListener('click', () => {
+    searchPanel.classList.toggle('collapsed');
+    searchPanelToggle.textContent = searchPanel.classList.contains('collapsed') ? '❯' : '❮';
+});
+
+// --- Point-to-Point Search -----------------
+const p2pOriginInput = document.getElementById('p2p-origin-input');
+const p2pDestInput = document.getElementById('p2p-dest-input');
+const p2pOriginSuggestions = document.getElementById('p2p-origin-suggestions');
+const p2pDestSuggestions = document.getElementById('p2p-dest-suggestions');
+const p2pSearchBtn = document.getElementById('p2p-search-btn');
+const p2pClearBtn = document.getElementById('p2p-clear-btn');
+const p2pResults = document.getElementById('p2p-results');
+let p2pOriginNormName = null;
+let p2pDestNormName = null;
+
+function renderP2pSuggestions(input, suggestionsBox, onSelect) {
+    const needle = input.value.trim().toLowerCase();
+    if (!needle) {
+        suggestionsBox.hidden = true;
+        return;
+    }
+    const matches = mrtStationFeatures
+        .filter(f => f.properties.name.toLowerCase().includes(needle))
+        .slice(0, 5);
+    
+    if (matches.length === 0) {
+        suggestionsBox.hidden = true;
+        return;
+    }
+    
+    suggestionsBox.innerHTML = matches.map(f => `
+        <div class="suggestion-item p2p-suggestion-item" data-norm-name="${f.properties.normName}" data-name="${f.properties.name}">
+            <span class="suggestion-badge suggestion-badge-mrt">MRT</span>
+            <span class="suggestion-label">${f.properties.name}</span>
+        </div>
+    `).join('');
+    suggestionsBox.hidden = false;
+    
+    suggestionsBox.querySelectorAll('.p2p-suggestion-item').forEach(item => {
+        item.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            input.value = item.dataset.name;
+            suggestionsBox.hidden = true;
+            onSelect(item.dataset.normName);
+        });
+    });
+}
+
+p2pOriginInput.addEventListener('input', () => renderP2pSuggestions(p2pOriginInput, p2pOriginSuggestions, (normName) => { p2pOriginNormName = normName; }));
+p2pDestInput.addEventListener('input', () => renderP2pSuggestions(p2pDestInput, p2pDestSuggestions, (normName) => { p2pDestNormName = normName; }));
+
+p2pOriginInput.addEventListener('blur', () => setTimeout(() => p2pOriginSuggestions.hidden = true, 150));
+p2pDestInput.addEventListener('blur', () => setTimeout(() => p2pDestSuggestions.hidden = true, 150));
+
+p2pClearBtn.addEventListener('click', () => {
+    p2pOriginInput.value = '';
+    p2pDestInput.value = '';
+    p2pOriginNormName = null;
+    p2pDestNormName = null;
+    p2pResults.innerHTML = '';
+});
+
+p2pSearchBtn.addEventListener('click', () => {
+    let origFeat = mrtStationFeatures.find(f => f.properties.normName === p2pOriginNormName || f.properties.name.toLowerCase() === p2pOriginInput.value.trim().toLowerCase());
+    let destFeat = mrtStationFeatures.find(f => f.properties.normName === p2pDestNormName || f.properties.name.toLowerCase() === p2pDestInput.value.trim().toLowerCase());
+    
+    if (origFeat) p2pOriginNormName = origFeat.properties.normName;
+    if (destFeat) p2pDestNormName = destFeat.properties.normName;
+
+    if (!p2pOriginNormName || !p2pDestNormName) {
+        p2pResults.innerHTML = '<p class="empty-note">Please select both origin and destination from the suggestions.</p>';
+        return;
+    }
+    
+    const connections = connectionsData[p2pOriginNormName];
+    if (!connections || !connections.boardingPoints) {
+        p2pResults.innerHTML = '<p class="empty-note">No bus connections found for the origin station.</p>';
+        return;
+    }
+    
+    let anyMatches = false;
+    p2pResults.innerHTML = '';
+    const targetDisplayName = connectionsData[p2pDestNormName] ? connectionsData[p2pDestNormName].displayName : destFeat.properties.name;
+    
+    for (const boardingPoint of connections.boardingPoints) {
+        const dest = boardingPoint.destinations.find(d => d.displayName === targetDisplayName || d.displayName.toUpperCase() === p2pDestNormName);
+        if (dest && dest.services.length > 0) {
+            anyMatches = true;
+            const services = dest.services.map(s => 
+                `<span class="service-chip" data-service-no="${s.serviceNo}" data-direction="${s.direction}" title="Click to show this route on the map">` +
+                `${s.serviceNo}<span class="service-chip-stops">(${s.numStops} stop${s.numStops === 1 ? '' : 's'})</span></span>`
+            ).join('');
+            
+            const boardingPointName = boardingPoint.name ? `<span class="boarding-point-name">${boardingPoint.name}</span>` : '';
+            const html = `
+                <div class="boarding-point-group" style="margin-bottom: 12px;">
+                    <div class="boarding-point-header">Boarding point <span class="boarding-point-code">${boardingPoint.code}</span>${boardingPointName}</div>
+                    <div class="connection-row">
+                        <div class="connection-services">${services}</div>
+                    </div>
+                </div>
+            `;
+            p2pResults.innerHTML += html;
+        }
+    }
+    
+    if (!anyMatches) {
+        p2pResults.innerHTML = '<p class="empty-note">No direct bridging bus services between these two stations.</p>';
+    }
+});
+
+p2pResults.addEventListener('click', (e) => {
+    const chip = e.target.closest('.service-chip');
+    if (!chip) return;
+    const { serviceNo, direction } = chip.dataset;
+    showBusRoute(serviceNo, Number(direction));
 });
 
 async function loadData() {
