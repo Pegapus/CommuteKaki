@@ -31,13 +31,6 @@
         </div>
         <div id="panel-scroll">
             <div id="status-line">Loading MRT stations…</div>
-            <div id="station-detail" hidden>
-                <button id="close-detail" title="Close">&times;</button>
-                <h2 id="detail-station-name"></h2>
-                <div id="detail-station-lines"></div>
-                <input id="detail-filter" type="text" placeholder="Filter destination stations…" />
-                <div id="detail-connections"></div>
-            </div>
         </div>
     </div>
 
@@ -93,15 +86,6 @@ map.addControl(new mapboxgl.GeolocateControl({
 }), 'top-right');
 
 const statusLine = document.getElementById('status-line');
-const detailPanel = document.getElementById('station-detail');
-const detailName = document.getElementById('detail-station-name');
-const detailLines = document.getElementById('detail-station-lines');
-const detailConnections = document.getElementById('detail-connections');
-const detailFilter = document.getElementById('detail-filter');
-document.getElementById('close-detail').addEventListener('click', () => {
-    detailPanel.hidden = true;
-    statusLine.hidden = false;
-});
 
 let connectionsData = {};
 let crowdDensityData = {};
@@ -303,40 +287,17 @@ document.getElementById('toggle-mrt-stations').addEventListener('change', (e) =>
     applyMrtStationsVisibility();
 });
 
-function renderConnections(normName, displayName, lines) {
-    currentStationConnections = connectionsData[normName] || null;
-    detailName.textContent = displayName;
-    detailLines.innerHTML = (lines || []).map(l => `<span class="line-badge">${l}</span>`).join('');
-    detailFilter.value = '';
-    drawConnectionsList('');
-    detailPanel.hidden = false;
-    statusLine.hidden = true;
-}
-
-function drawConnectionsList(filterText) {
-    detailConnections.innerHTML = '';
-    const boardingPoints = currentStationConnections ? (currentStationConnections.boardingPoints || []) : [];
+function generateConnectionsHtml(normName) {
+    const data = connectionsData[normName];
+    if (!data) return '';
+    const boardingPoints = data.boardingPoints || [];
     if (boardingPoints.length === 0) {
-        detailConnections.innerHTML = '<p class="empty-note">No free boarding/alighting points on record for this station.</p>';
-        return;
+        return '<p class="empty-note">No free boarding/alighting points on record for this station.</p>';
     }
 
-    const needle = filterText.toLowerCase();
-    let anyRendered = false;
-
+    let html = '';
     for (const boardingPoint of boardingPoints) {
-        const destinations = needle
-            ? boardingPoint.destinations.filter(d => d.displayName.toLowerCase().includes(needle))
-            : boardingPoint.destinations;
-
-        // While searching, skip boarding points with no matching destination.
-        // Otherwise show every boarding point, even ones with no known connections.
-        if (needle && destinations.length === 0) continue;
-        anyRendered = true;
-
-        const group = document.createElement('div');
-        group.className = 'boarding-point-group';
-
+        const destinations = boardingPoint.destinations;
         const destRowsHtml = destinations.length > 0
             ? destinations.map(dest => {
                 const services = dest.services.map(s =>
@@ -359,21 +320,18 @@ function drawConnectionsList(filterText) {
         const boardingPointName = boardingPoint.name
             ? `<span class="boarding-point-name">${boardingPoint.name}</span>`
             : '';
-        group.innerHTML = `
-            <div class="boarding-point-header">Boarding point <span class="boarding-point-code">${boardingPoint.code}</span>${boardingPointName}</div>
-            ${destRowsHtml}
+        html += `
+            <div class="boarding-point-group">
+                <div class="boarding-point-header">Boarding point <span class="boarding-point-code">${boardingPoint.code}</span>${boardingPointName}</div>
+                ${destRowsHtml}
+            </div>
         `;
-        detailConnections.appendChild(group);
     }
-
-    if (!anyRendered) {
-        detailConnections.innerHTML = '<p class="empty-note">No matching destination stations.</p>';
-    }
+    return html;
 }
 
-detailFilter.addEventListener('input', () => drawConnectionsList(detailFilter.value.trim()));
-
-detailConnections.addEventListener('click', (e) => {
+// Global listener for service-chip clicks inside the map popup
+document.getElementById('map').addEventListener('click', (e) => {
     const chip = e.target.closest('.service-chip');
     if (!chip) return;
     const { serviceNo, direction } = chip.dataset;
@@ -383,8 +341,7 @@ detailConnections.addEventListener('click', (e) => {
 // Shared by clicking a dot on the map and by picking a station from search results.
 function selectMrtStation(feature) {
     const { name, normName } = feature.properties;
-    renderConnections(normName, connectionsData[normName] ? connectionsData[normName].displayName : name, connectionsData[normName] ? connectionsData[normName].lines : []);
-
+    
     map.flyTo({ center: feature.geometry.coordinates, zoom: Math.max(map.getZoom(), 14) });
 
     let crowdHtml = '';
@@ -397,10 +354,19 @@ function selectMrtStation(feature) {
         }
     }
 
+    const connectionsHtml = generateConnectionsHtml(normName);
+    const contentHtml = `
+        <div style="max-height: 250px; overflow-y: auto; overflow-x: hidden; padding-right: 4px;">
+            <div style="font-size: 14px; margin-bottom: 4px;"><strong>${name}</strong></div>
+            ${crowdHtml}
+            <div style="margin-top: 10px;">${connectionsHtml}</div>
+        </div>
+    `;
+
     if (activePopup) activePopup.remove();
-    activePopup = new mapboxgl.Popup({ offset: 12 })
+    activePopup = new mapboxgl.Popup({ offset: 12, maxWidth: '300px' })
         .setLngLat(feature.geometry.coordinates)
-        .setHTML(`<strong>${name}</strong>${crowdHtml}`)
+        .setHTML(contentHtml)
         .addTo(map);
 }
 
@@ -687,13 +653,15 @@ async function loadData() {
     const pointFeatures = geojson.features.map(f => {
         const normName = normalizeStationName(f.properties.STN_NAM_DE);
         const hasConnections = stationHasConnections(connectionsData[normName]);
+        const crowdDensity = crowdDensityData[normName] || 'none';
         return {
             type: 'Feature',
             geometry: { type: 'Point', coordinates: polygonCentroid(f.geometry.coordinates) },
             properties: {
                 name: f.properties.STN_NAM_DE,
                 normName,
-                hasConnections
+                hasConnections,
+                crowdDensity
             }
         };
     });
@@ -707,7 +675,14 @@ async function loadData() {
         source: 'mrt-stations',
         paint: {
             'circle-radius': ['interpolate', ['linear'], ['zoom'], 10, 3, 16, 9],
-            'circle-color': ['case', ['get', 'hasConnections'], '#1d4ed8', '#9ca3af'],
+            'circle-color': [
+                'match',
+                ['get', 'crowdDensity'],
+                'l', '#16a34a',
+                'm', '#f59e0b',
+                'h', '#dc2626',
+                ['case', ['get', 'hasConnections'], '#1d4ed8', '#9ca3af']
+            ],
             'circle-stroke-color': '#ffffff',
             'circle-stroke-width': 1.5
         }

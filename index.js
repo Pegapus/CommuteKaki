@@ -327,7 +327,7 @@ function buildConnectionsIndex(bridgingRows, busRoutesDocs, mrtFeatures, busStop
 
     const mrtNormNames = new Set(
         (mrtFeatures || [])
-            .filter(f => f.properties && f.properties.TYP_CD_DES === 'MRT')
+            .filter(f => f.properties && f.properties.STN_NAM_DE && (f.properties.STN_NAM_DE.includes('MRT STATION') || f.properties.STN_NAM_DE.includes('LRT STATION')))
             .map(f => normalizeStationName(f.properties.STN_NAM_DE))
     );
     const unmatchedInSheet = [...stations.keys()].filter(n => !mrtNormNames.has(n));
@@ -414,8 +414,8 @@ app.get('/api/mrt-stations', async (req, res) => {
             res.json({ value: null });
             return;
         }
-        // Scope to heavy-rail MRT stations — the bridging points sheet only covers MRT lines, not LRT.
-        const features = geojson.features.filter(f => f.properties && f.properties.TYP_CD_DES === 'MRT');
+        // Include both MRT and LRT stations on the map
+        const features = geojson.features.filter(f => f.properties && f.properties.STN_NAM_DE && (f.properties.STN_NAM_DE.includes('MRT STATION') || f.properties.STN_NAM_DE.includes('LRT STATION')));
         res.json({ value: { type: 'FeatureCollection', features } });
     } catch (error) {
         res.status(500).json({ error: error.message });
