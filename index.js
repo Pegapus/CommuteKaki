@@ -1,6 +1,6 @@
 require('dotenv').config({ path: '.env' });
 
-const requiredEnvVars = ['MONGODB_URI', 'MONGODB_DBNAME', 'MAPBOX_API_KEY', 'LTA_DATAMALL_KEY', 'FRONT_END_URL', 'BRIDGING_POINTS_SHEET_ID'];
+const requiredEnvVars = ['MONGODB_URI', 'MONGODB_DBNAME', 'MAPBOX_API_KEY', 'LTA_DATAMALL_KEY', 'FRONT_END_URL'];
 try {
     let missingEnvVars = [];
     for (const varName of requiredEnvVars) {
