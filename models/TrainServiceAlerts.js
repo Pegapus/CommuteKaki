@@ -32,7 +32,7 @@ async function getTrainServiceAlerts() {
             "MRTShuttleDirection": ""
         });
         data.value.Message.push({
-            "Content": "16:57-NEL-Additional travelling time of 20 minutes between Boon Keng and Dhoby Ghaut stations towards HarbourFront station due to a signal fault.",
+            "Content": "16:57-NEL-Additional travelling time of 20 minutes between Boon Keng and Dhoby Ghaut stations in both directions due to a signal fault.",
             "CreatedDate": "2026-09-18 16:57:25"
         });
         data.value.AffectedSegments.push({
@@ -44,7 +44,7 @@ async function getTrainServiceAlerts() {
             "MRTShuttleDirection": ""
         });
         data.value.Message.push({
-            "Content": "16:57-EWL-Additional travelling time of 20 minutes between Boon Keng and Dhoby Ghaut stations towards HarbourFront station due to a signal fault.",
+            "Content": "16:57-EWL-Additional travelling time of 20 minutes between Tampines and Bedok stations in both directions due to a signal fault.",
             "CreatedDate": "2026-09-18 16:57:25"
         });
         // cachedAlerts = {
