@@ -75,5 +75,6 @@ async function getStationCrowdDensity() {
 }
 
 module.exports = {
-    getStationCrowdDensity
+    getStationCrowdDensity,
+    getStationCodesMapping
 };

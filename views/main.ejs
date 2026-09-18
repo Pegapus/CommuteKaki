@@ -36,9 +36,10 @@
 
 <div id="panel" class="collapsible-panel collapsed">
     <button id="panel-toggle" class="panel-toggle" title="Toggle Panel">❯</button>
-    <div class="panel-tabs">
-        <button id="tab-search" class="panel-tab active">Explore & Search</button>
-        <button id="tab-p2p" class="panel-tab">Point-to-Point Route</button>
+    <div class="panel-tabs" style="display: flex; flex-direction: row; flex-wrap: nowrap;">
+        <button id="tab-search" class="panel-tab active" style="flex: 1; padding: 10px 5px; font-size: 13px;">Explore & Search</button>
+        <button id="tab-p2p" class="panel-tab" style="flex: 1; padding: 10px 5px; font-size: 13px;">MRT-to-MRT Bus Services</button>
+        <button id="tab-otp" class="panel-tab" style="flex: 1; padding: 10px 5px; font-size: 13px;">Point-to-Point</button>
     </div>
     
     <div id="tab-content-search" class="tab-content">
@@ -52,20 +53,53 @@
     </div>
 
     <div id="tab-content-p2p" class="tab-content" hidden>
-        <div id="p2p-section">
-            <div class="p2p-input-container">
-                <input id="p2p-origin-input" class="p2p-input" type="text" placeholder="Origin MRT station…" autocomplete="off" />
-                <div id="p2p-origin-suggestions" class="p2p-suggestions" hidden></div>
+        <div id="p2p-section" style="display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0;">
+            <div style="flex-shrink: 0;">
+                <div class="p2p-input-container">
+                    <input id="p2p-origin-input" class="p2p-input" type="text" placeholder="Origin MRT station…" autocomplete="off" />
+                    <div id="p2p-origin-suggestions" class="p2p-suggestions" hidden></div>
+                </div>
+                <div class="p2p-input-container">
+                    <input id="p2p-dest-input" class="p2p-input" type="text" placeholder="Destination MRT station…" autocomplete="off" />
+                    <div id="p2p-dest-suggestions" class="p2p-suggestions" hidden></div>
+                </div>
+                <div class="p2p-buttons">
+                    <button id="p2p-search-btn" class="p2p-btn">Search Route</button>
+                    <button id="p2p-clear-btn" class="p2p-btn">Clear</button>
+                </div>
             </div>
-            <div class="p2p-input-container">
-                <input id="p2p-dest-input" class="p2p-input" type="text" placeholder="Destination MRT station…" autocomplete="off" />
-                <div id="p2p-dest-suggestions" class="p2p-suggestions" hidden></div>
+            <div id="p2p-results" style="flex: 1 1 auto; overflow-y: auto; min-height: 0; margin-top: 10px;"></div>
+        </div>
+    </div>
+
+    <div id="tab-content-otp" class="tab-content" hidden>
+        <div id="otp-section" style="display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0;">
+            <div style="flex-shrink: 0;">
+                <div class="p2p-input-container">
+                    <input id="otp-origin-input" class="p2p-input" type="text" placeholder="Origin (click map or type)…" autocomplete="off" />
+                    <div id="otp-origin-suggestions" class="p2p-suggestions" hidden></div>
+                </div>
+                <div class="p2p-input-container">
+                    <input id="otp-dest-input" class="p2p-input" type="text" placeholder="Destination (click map or type)…" autocomplete="off" />
+                    <div id="otp-dest-suggestions" class="p2p-suggestions" hidden></div>
+                </div>
+                <div class="p2p-input-container" style="display: flex; gap: 10px;">
+                    <div style="flex: 1;">
+                        <label style="font-size: 11px; color: #666; margin-bottom: 2px; display: block;">Departure Date</label>
+                        <input id="otp-date-input" class="p2p-input" type="date" />
+                    </div>
+                    <div style="flex: 1;">
+                        <label style="font-size: 11px; color: #666; margin-bottom: 2px; display: block;">Departure Time</label>
+                        <input id="otp-time-input" class="p2p-input" type="time" />
+                    </div>
+                </div>
+                <div class="p2p-buttons">
+                    <button id="otp-search-btn" class="p2p-btn">Search Route</button>
+                    <button id="otp-clear-btn" class="p2p-btn">Clear</button>
+                </div>
+                <div id="otp-status" style="margin-top: 10px; font-size: 13px; color: #666;"></div>
             </div>
-            <div class="p2p-buttons">
-                <button id="p2p-search-btn" class="p2p-btn">Search Route</button>
-                <button id="p2p-clear-btn" class="p2p-btn">Clear</button>
-            </div>
-            <div id="p2p-results"></div>
+            <div id="otp-results" style="margin-top: 10px; flex: 1 1 auto; overflow-y: auto; min-height: 0;"></div>
         </div>
     </div>
 </div>
@@ -112,6 +146,7 @@ let mrtStationsVisible = true;
 let busStopDescriptions = {}; // BusStopCode -> Description, used to label search results
 let routeGeometryCache = {}; // "ServiceNo|Direction" -> [[lng,lat],...], filled lazily as the user clicks services
 let routeMarkers = [];
+let otpMarkers = [];
 let routeStopPopup = null;
 let activeRouteRequestId = 0; // bumped on every clear/new click so a stale in-flight fetch can't draw over a newer one
 let mrtStationFeatures = []; // point features built in loadData(), kept here so search can reuse them
@@ -150,6 +185,8 @@ function clearSelectedRoute() {
     activeRouteRequestId++;
     routeMarkers.forEach(m => m.remove());
     routeMarkers = [];
+    otpMarkers.forEach(m => m.remove());
+    otpMarkers = [];
     if (routeStopPopup) { routeStopPopup.remove(); routeStopPopup = null; }
     if (map.getLayer(ROUTE_ARROW_LAYER_ID)) map.removeLayer(ROUTE_ARROW_LAYER_ID);
     if (map.getLayer(ROUTE_LINE_LAYER_ID)) map.removeLayer(ROUTE_LINE_LAYER_ID);
@@ -496,22 +533,21 @@ panelToggle.addEventListener('click', () => {
 // --- Tab Switching ----------------
 const tabSearch = document.getElementById('tab-search');
 const tabP2p = document.getElementById('tab-p2p');
+const tabOtp = document.getElementById('tab-otp');
 const tabContentSearch = document.getElementById('tab-content-search');
 const tabContentP2p = document.getElementById('tab-content-p2p');
+const tabContentOtp = document.getElementById('tab-content-otp');
 
-tabSearch.addEventListener('click', () => {
-    tabSearch.classList.add('active');
-    tabP2p.classList.remove('active');
-    tabContentSearch.hidden = false;
-    tabContentP2p.hidden = true;
-});
+function switchTab(activeTab, activeContent) {
+    [tabSearch, tabP2p, tabOtp].forEach(t => t.classList.remove('active'));
+    [tabContentSearch, tabContentP2p, tabContentOtp].forEach(c => c.hidden = true);
+    activeTab.classList.add('active');
+    activeContent.hidden = false;
+}
 
-tabP2p.addEventListener('click', () => {
-    tabP2p.classList.add('active');
-    tabSearch.classList.remove('active');
-    tabContentP2p.hidden = false;
-    tabContentSearch.hidden = true;
-});
+tabSearch.addEventListener('click', () => switchTab(tabSearch, tabContentSearch));
+tabP2p.addEventListener('click', () => switchTab(tabP2p, tabContentP2p));
+tabOtp.addEventListener('click', () => switchTab(tabOtp, tabContentOtp));
 
 // --- Point-to-Point Search -----------------
 const p2pOriginInput = document.getElementById('p2p-origin-input');
@@ -820,6 +856,210 @@ alertsToggle.addEventListener('click', async () => {
 
 document.getElementById('train-alerts-close').addEventListener('click', () => {
     alertsBanner.hidden = true;
+});
+
+// --- OTP Point-to-Point Search ---
+const otpOriginInput = document.getElementById('otp-origin-input');
+const otpDestInput = document.getElementById('otp-dest-input');
+const otpSearchBtn = document.getElementById('otp-search-btn');
+const otpClearBtn = document.getElementById('otp-clear-btn');
+const otpStatus = document.getElementById('otp-status');
+const otpResults = document.getElementById('otp-results');
+
+let otpOrigin = null;
+let otpDest = null;
+
+let activeOtpInput = 'origin';
+otpOriginInput.addEventListener('focus', () => { activeOtpInput = 'origin'; });
+otpDestInput.addEventListener('focus', () => { activeOtpInput = 'dest'; });
+otpOriginInput.addEventListener('input', () => { otpOrigin = null; });
+otpDestInput.addEventListener('input', () => { otpDest = null; });
+
+map.on('click', (e) => {
+    if (!tabOtp.classList.contains('active')) return;
+    const pt = { lat: e.lngLat.lat, lon: e.lngLat.lng };
+    if (activeOtpInput === 'origin' || (!otpOrigin && otpDest)) {
+        pt.name = 'Point A';
+        otpOrigin = pt;
+        otpOriginInput.value = pt.name;
+        activeOtpInput = 'dest';
+        otpDestInput.focus();
+    } else {
+        pt.name = 'Point B';
+        otpDest = pt;
+        otpDestInput.value = pt.name;
+    }
+    updateOtpMarkers();
+});
+
+function updateOtpMarkers() {
+    otpMarkers.forEach(m => m.remove());
+    otpMarkers = [];
+    if (otpOrigin) addOtpMarker(otpOrigin, '#10b981', 'A');
+    if (otpDest) addOtpMarker(otpDest, '#ef4444', 'B');
+}
+
+function addOtpMarker(pt, color, label) {
+    const el = document.createElement('div');
+    el.className = 'route-endpoint-marker';
+    el.style.background = color;
+    el.textContent = label;
+    const marker = new mapboxgl.Marker({ element: el, anchor: 'center' }).setLngLat([pt.lon, pt.lat]).addTo(map);
+    otpMarkers.push(marker);
+}
+
+async function geocodeMapbox(text) {
+    const res = await fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(text)}.json?access_token=${MAPBOX_API_KEY}&bbox=103.55,1.15,104.15,1.5`);
+    const data = await res.json();
+    if (data.features && data.features.length > 0) {
+        return { lat: data.features[0].center[1], lon: data.features[0].center[0], name: data.features[0].place_name };
+    }
+    return null;
+}
+
+function decodePolyline(str, precision) {
+    let index = 0, lat = 0, lng = 0, coordinates = [], shift = 0, result = 0, byte = null;
+    let latitude_change, longitude_change, factor = Math.pow(10, precision !== undefined ? precision : 5);
+    while (index < str.length) {
+        byte = null; shift = 0; result = 0;
+        do { byte = str.charCodeAt(index++) - 63; result |= (byte & 0x1f) << shift; shift += 5; } while (byte >= 0x20);
+        latitude_change = ((result & 1) ? ~(result >> 1) : (result >> 1));
+        shift = result = 0;
+        do { byte = str.charCodeAt(index++) - 63; result |= (byte & 0x1f) << shift; shift += 5; } while (byte >= 0x20);
+        longitude_change = ((result & 1) ? ~(result >> 1) : (result >> 1));
+        lat += latitude_change; lng += longitude_change;
+        coordinates.push([lng / factor, lat / factor]);
+    }
+    return coordinates;
+}
+
+otpClearBtn.addEventListener('click', () => {
+    otpOrigin = null; otpDest = null;
+    otpOriginInput.value = ''; otpDestInput.value = '';
+    otpStatus.textContent = ''; otpResults.innerHTML = '';
+    activeOtpInput = 'origin';
+    updateOtpMarkers();
+    clearSelectedRoute();
+});
+
+otpSearchBtn.addEventListener('click', async () => {
+    otpStatus.textContent = 'Searching...';
+    otpResults.innerHTML = '';
+    clearSelectedRoute();
+
+    try {
+        if (!otpOrigin && otpOriginInput.value.trim()) otpOrigin = await geocodeMapbox(otpOriginInput.value.trim());
+        if (!otpDest && otpDestInput.value.trim()) otpDest = await geocodeMapbox(otpDestInput.value.trim());
+
+        if (!otpOrigin || !otpDest) {
+            otpStatus.textContent = 'Please specify valid origin and destination.';
+            return;
+        }
+        
+        updateOtpMarkers();
+        
+        const params = new URLSearchParams({
+            fromPlace: `${otpOrigin.lat},${otpOrigin.lon}`,
+            toPlace: `${otpDest.lat},${otpDest.lon}`,
+            mode: 'TRANSIT,WALK'
+        });
+        
+        const dateInput = document.getElementById('otp-date-input').value;
+        const timeInput = document.getElementById('otp-time-input').value;
+        
+        if (dateInput) {
+            params.append('date', dateInput);
+        }
+        if (timeInput) {
+            params.append('time', timeInput);
+        }
+        
+        const res = await fetch(`/api/routing/plan?${params.toString()}`);
+        if (!res.ok) throw new Error('Failed to fetch route from OneMap API');
+        const data = await res.json();
+        
+        if (data.error || !data.plan || !data.plan.itineraries || data.plan.itineraries.length === 0) {
+            otpStatus.textContent = 'No routes found.';
+            return;
+        }
+
+        const itinerary = data.plan.itineraries[0];
+        otpStatus.textContent = `Found route: ${Math.round(itinerary.duration / 60)} min`;
+        
+        let html = '<div style="font-size:13px; line-height:1.4;">';
+        html += `
+            <div style="margin-bottom: 10px; display: flex; gap: 10px; flex-wrap: wrap;">
+                <div style="display: flex; align-items: center; gap: 4px;"><div style="width:12px; height:12px; background:#ef4444; border-radius:2px;"></div> Train</div>
+                <div style="display: flex; align-items: center; gap: 4px;"><div style="width:12px; height:12px; background:#22c55e; border-radius:2px;"></div> Bus</div>
+                <div style="display: flex; align-items: center; gap: 4px;"><div style="width:12px; height:12px; background:#9ca3af; border-radius:2px;"></div> Walk</div>
+            </div>
+        `;
+        let features = [];
+        let allCoordinates = [];
+        
+        itinerary.legs.forEach(leg => {
+            const mode = leg.mode;
+            const displayMode = mode === 'SUBWAY' ? 'TRAIN' : mode;
+            const from = leg.from.name;
+            const to = leg.to.name;
+            let routeName = leg.route;
+            if (routeName && ['SUBWAY', 'TRAIN', 'RAIL'].includes(mode)) {
+                const lines = { 'NE': 'NEL', 'EW': 'EWL', 'NS': 'NSL', 'CC': 'CCL', 'DT': 'DTL', 'TE': 'TEL', 'CG': 'CGL', 'CE': 'CEL' };
+                if (lines[routeName]) routeName = lines[routeName];
+            }
+            const routeStr = routeName ? ` (${routeName})` : '';
+            html += `<div style="padding: 6px; border-bottom: 1px solid #eee;">
+                <strong>${displayMode}${routeStr}</strong> from ${from} to ${to} <br/>
+                <span style="color:#666;">Duration: ${Math.round(leg.duration / 60)} min</span>
+            </div>`;
+            
+            if (leg.legGeometry && leg.legGeometry.points) {
+                const coords = decodePolyline(leg.legGeometry.points);
+                allCoordinates.push(...coords);
+                features.push({
+                    type: 'Feature',
+                    properties: { mode: mode },
+                    geometry: { type: 'LineString', coordinates: coords }
+                });
+            }
+        });
+        html += '</div>';
+        otpResults.innerHTML = html;
+
+        if (features.length > 0) {
+            map.addSource(ROUTE_SOURCE_ID, {
+                type: 'geojson',
+                data: { type: 'FeatureCollection', features: features }
+            });
+            map.addLayer({
+                id: ROUTE_LINE_LAYER_ID,
+                type: 'line',
+                source: ROUTE_SOURCE_ID,
+                layout: { 'line-join': 'round', 'line-cap': 'round' },
+                paint: { 
+                    'line-color': [
+                        'match',
+                        ['get', 'mode'],
+                        'WALK', '#9ca3af',      // Gray
+                        'BUS', '#22c55e',       // Green
+                        'SUBWAY', '#ef4444',    // Red
+                        'RAIL', '#ef4444',      // Red
+                        'TRAM', '#ef4444',      // Red
+                        'TRANSIT', '#ef4444',   // Red
+                        '#1d4ed8'               // Default Blue
+                    ], 
+                    'line-width': 4 
+                }
+            }, 'waterway-label');
+            
+            const bounds = new mapboxgl.LngLatBounds();
+            allCoordinates.forEach(c => bounds.extend(c));
+            map.fitBounds(bounds, { padding: 50 });
+        }
+    } catch (err) {
+        console.error(err);
+        otpStatus.textContent = 'Error: ' + err.message;
+    }
 });
 
 map.on('load', () => {

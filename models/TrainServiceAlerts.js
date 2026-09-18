@@ -25,14 +25,26 @@ async function getTrainServiceAlerts() {
         // APPEND MOCK DATA
         data.value.AffectedSegments.push({
             "Line": "NEL",
-            "Direction": "HarbourFront",
+            "Direction": "Both",
             "Stations": "NE9,NE8,NE7,NE6",
             "FreePublicBus": "NE9,NE8,NE7,NE6",
             "FreeMRTShuttle": "",
             "MRTShuttleDirection": ""
         });
         data.value.Message.push({
-            "Content": "1657hrs : NEL - Additional travelling time of 20 minutes between Boon Keng and Dhoby Ghaut stations towards HarbourFront station due to a signal fault.",
+            "Content": "16:57-NEL-Additional travelling time of 20 minutes between Boon Keng and Dhoby Ghaut stations towards HarbourFront station due to a signal fault.",
+            "CreatedDate": "2026-09-18 16:57:25"
+        });
+        data.value.AffectedSegments.push({
+            "Line": "EWL",
+            "Direction": "Both",
+            "Stations": "EW2,EW3,EW4,EW5",
+            "FreePublicBus": "EW2,EW3,EW4,EW5",
+            "FreeMRTShuttle": "",
+            "MRTShuttleDirection": ""
+        });
+        data.value.Message.push({
+            "Content": "16:57-EWL-Additional travelling time of 20 minutes between Boon Keng and Dhoby Ghaut stations towards HarbourFront station due to a signal fault.",
             "CreatedDate": "2026-09-18 16:57:25"
         });
         // cachedAlerts = {
