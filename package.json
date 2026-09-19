@@ -7,7 +7,6 @@
   "type": "commonjs",
   "main": "index.js",
   "scripts": {
-    "test": "node --test tests/*.test.js",
     "server": "node index.js",
     "fetch-bus-routes": "node scripts/fetchLTABusRoutes.js",
     "fetch-bus-stops": "node scripts/fetchLTABusStops.js",

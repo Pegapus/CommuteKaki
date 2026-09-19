@@ -2,9 +2,8 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>CommuteKaki | Your commute, sorted</title>
-<link rel="icon" href="/images/commutekaki.svg" type="image/svg+xml">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Smart Commuter Companion</title>
 <link href="https://api.mapbox.com/mapbox-gl-js/v3.6.0/mapbox-gl.css" rel="stylesheet">
 <script src="https://api.mapbox.com/mapbox-gl-js/v3.6.0/mapbox-gl.js"></script>
 <link rel="stylesheet" href="/css/styles.css">
@@ -12,6 +11,15 @@
 <body>
 
 <div id="map"></div>
+
+<div id="header-panel">
+    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 4px;">
+        <h1 style="margin: 0;">Smart Commuter Companion</h1>
+        <button id="refresh-crowd-btn" class="p2p-btn" style="padding: 4px 8px; font-size: 11px; background: #1d4ed8; color: #fff; flex: 0 0 auto; margin-left: 8px;">Refresh Crowd</button>
+    </div>
+
+    <p id="panel-subtitle">Click an MRT station to see bus services connecting it to another station via free boarding/alighting points.</p>
+</div>
 
 <button id="train-alerts-toggle" hidden title="Toggle Train Alerts">
     ⚠️ Train Service Alert
@@ -26,12 +34,11 @@
     <button id="train-alerts-close" title="Dismiss">&times;</button>
 </div>
 
-<div id="panel" class="collapsible-panel">
-    <div class="brand-row"><a class="brand" href="/" aria-label="CommuteKaki home"><img src="/images/commutekaki.svg" width="36" height="36" alt=""><span>Commute<span class="brand-accent">Kaki</span></span></a><button id="refresh-crowd-btn" class="p2p-btn">Refresh crowd</button></div>
-    <button id="panel-toggle" class="panel-toggle" aria-expanded="true" title="Show or hide controls">Hide controls</button>
+<div id="panel" class="collapsible-panel collapsed">
+    <button id="panel-toggle" class="panel-toggle" title="Toggle Panel">❯</button>
     <div class="panel-tabs" style="display: flex; flex-direction: row; flex-wrap: nowrap;">
         <button id="tab-search" class="panel-tab active" style="flex: 1; padding: 10px 5px; font-size: 13px;">Explore & Search</button>
-        <button id="tab-p2p" class="panel-tab" style="flex: 1; padding: 10px 5px; font-size: 13px;">MRT buses</button>
+        <button id="tab-p2p" class="panel-tab" style="flex: 1; padding: 10px 5px; font-size: 13px;">MRT-to-MRT Bus Services</button>
         <button id="tab-otp" class="panel-tab" style="flex: 1; padding: 10px 5px; font-size: 13px;">Point-to-Point</button>
     </div>
     
@@ -69,64 +76,28 @@
         <div id="otp-section" style="display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0;">
             <div style="flex-shrink: 0;">
                 <div class="p2p-input-container">
-                    <input id="otp-origin-input" class="p2p-input" type="text" placeholder="From: address, place or postcode" aria-label="Starting location" autocomplete="off" />
+                    <input id="otp-origin-input" class="p2p-input" type="text" placeholder="Origin (click map or type)…" autocomplete="off" />
                     <div id="otp-origin-suggestions" class="p2p-suggestions" hidden></div>
                 </div>
                 <div class="p2p-input-container">
-                    <input id="otp-dest-input" class="p2p-input" type="text" placeholder="To: where are you heading?" aria-label="Destination" autocomplete="off" />
+                    <input id="otp-dest-input" class="p2p-input" type="text" placeholder="Destination (click map or type)…" autocomplete="off" />
                     <div id="otp-dest-suggestions" class="p2p-suggestions" hidden></div>
                 </div>
                 <div class="p2p-input-container" style="display: flex; gap: 10px;">
                     <div style="flex: 1;">
                         <label style="font-size: 11px; color: #666; margin-bottom: 2px; display: block;">Departure Date</label>
-                        <input aria-label="Departure date" id="otp-date-input" class="p2p-input" type="date" />
+                        <input id="otp-date-input" class="p2p-input" type="date" />
                     </div>
                     <div style="flex: 1;">
                         <label style="font-size: 11px; color: #666; margin-bottom: 2px; display: block;">Departure Time</label>
-                        <input aria-label="Departure time in Singapore" id="otp-time-input" class="p2p-input" type="time" />
+                        <input id="otp-time-input" class="p2p-input" type="time" />
                     </div>
                 </div>
-                <details class="route-filters">
-                    <summary><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3" fill="white"/><circle cx="15" cy="17" r="3" fill="white"/></svg> Filters <span>Optional limits</span></summary>
-                <fieldset class="otp-preferences"><legend>Route limits</legend>
-                    <div class="otp-filter-grid">
-                        <label>Maximum crowd
-                            <select id="otp-max-crowd" class="p2p-input">
-                                <option value="any">Any</option>
-                                <option value="l">Low only</option>
-                                <option value="m">Low or moderate</option>
-                            </select>
-                        </label>
-                        <label>Maximum transfers
-                            <select id="otp-max-transfers" class="p2p-input">
-                                <option value="any">Any</option>
-                                <option value="0">Direct</option>
-                                <option value="1">Up to 1</option>
-                                <option value="2">Up to 2</option>
-                            </select>
-                        </label>
-                        <label>Maximum walking
-                            <select id="otp-max-walk" class="p2p-input">
-                                <option value="any">Any</option>
-                                <option value="500">500 m</option>
-                                <option value="1000">1 km</option>
-                                <option value="2000">2 km</option>
-                            </select>
-                        </label>
-                    </div>
-                    <label class="otp-unknown-toggle"><input id="otp-include-unknown" type="checkbox"> Include routes with unknown crowding</label>
-                    <p class="otp-filter-note">Crowding describes rail boarding stations. Bus crowding remains unknown.</p>
-                </fieldset>
-                </details>
                 <div class="p2p-buttons">
-                    <button id="otp-search-btn" class="p2p-btn">Find Routes</button>
+                    <button id="otp-search-btn" class="p2p-btn">Search Route</button>
                     <button id="otp-clear-btn" class="p2p-btn">Clear</button>
                 </div>
-                <div role="status" aria-live="polite" id="otp-status" style="margin-top: 10px; font-size: 13px; color: #666;"></div>
-            </div>
-            <div id="otp-sort" class="route-sort" hidden>
-                <label for="otp-preference">Find your best route</label>
-                <select id="otp-preference" class="p2p-input"><option value="fastest">Fastest</option><option value="crowd">Least crowded</option><option value="transfers">Least transfers</option><option value="walking">Least walking</option></select>
+                <div id="otp-status" style="margin-top: 10px; font-size: 13px; color: #666;"></div>
             </div>
             <div id="otp-results" style="margin-top: 10px; flex: 1 1 auto; overflow-y: auto; min-height: 0;"></div>
         </div>
@@ -183,8 +154,6 @@ let busServiceRecords = []; // raw /api/bus-services rows: {ServiceNo, Direction
 
 const ROUTE_SOURCE_ID = 'selected-bus-route';
 const ROUTE_LINE_LAYER_ID = 'selected-bus-route-line';
-const ROUTE_WALK_OUTLINE_LAYER_ID = 'selected-route-walk-outline';
-const ROUTE_WALK_LAYER_ID = 'selected-route-walk';
 const ROUTE_ARROW_LAYER_ID = 'selected-bus-route-arrows';
 const ROUTE_STOPS_SOURCE_ID = 'selected-bus-route-stops';
 const ROUTE_STOPS_LAYER_ID = 'selected-bus-route-stops-layer';
@@ -220,9 +189,7 @@ function clearSelectedRoute() {
     otpMarkers = [];
     if (routeStopPopup) { routeStopPopup.remove(); routeStopPopup = null; }
     if (map.getLayer(ROUTE_ARROW_LAYER_ID)) map.removeLayer(ROUTE_ARROW_LAYER_ID);
-    if (map.getLayer(ROUTE_WALK_LAYER_ID)) map.removeLayer(ROUTE_WALK_LAYER_ID);
     if (map.getLayer(ROUTE_LINE_LAYER_ID)) map.removeLayer(ROUTE_LINE_LAYER_ID);
-    if (map.getLayer(ROUTE_WALK_OUTLINE_LAYER_ID)) map.removeLayer(ROUTE_WALK_OUTLINE_LAYER_ID);
     if (map.getLayer(ROUTE_STOPS_LAYER_ID)) map.removeLayer(ROUTE_STOPS_LAYER_ID);
     if (map.getSource(ROUTE_SOURCE_ID)) map.removeSource(ROUTE_SOURCE_ID);
     if (map.getSource(ROUTE_STOPS_SOURCE_ID)) map.removeSource(ROUTE_STOPS_SOURCE_ID);
@@ -431,12 +398,15 @@ function selectMrtStation(feature) {
     
     map.flyTo({ center: feature.geometry.coordinates, zoom: Math.max(map.getZoom(), 14) });
 
-    const levels = { 'l': 'Low', 'm': 'Moderate', 'h': 'High' };
-    const colors = { 'l': '#16a34a', 'm': '#f59e0b', 'h': '#dc2626' };
-    const lvl = crowdDensityData[normName];
-    const crowdLabel = levels[lvl] || 'Unknown';
-    const crowdColor = colors[lvl] || '#4b5563';
-    const crowdHtml = `<div style="margin-top: 4px; font-size: 11px; color: ${crowdColor}; font-weight: 600;">Crowd Density: ${crowdLabel}</div>`;
+    let crowdHtml = '';
+    if (crowdDensityData[normName]) {
+        const levels = { 'l': 'Low', 'm': 'Moderate', 'h': 'High' };
+        const colors = { 'l': '#16a34a', 'm': '#f59e0b', 'h': '#dc2626' };
+        const lvl = crowdDensityData[normName];
+        if (levels[lvl]) {
+            crowdHtml = `<div style="margin-top: 4px; font-size: 11px; color: ${colors[lvl]}; font-weight: 600;">Crowd Density: ${levels[lvl]}</div>`;
+        }
+    }
 
     const connectionsHtml = generateConnectionsHtml(normName);
     const contentHtml = `
@@ -557,9 +527,7 @@ const panel = document.getElementById('panel');
 const panelToggle = document.getElementById('panel-toggle');
 panelToggle.addEventListener('click', () => {
     panel.classList.toggle('collapsed');
-    const expanded = !panel.classList.contains('collapsed');
-    panelToggle.textContent = expanded ? 'Hide controls' : 'Show controls';
-    panelToggle.setAttribute('aria-expanded', String(expanded));
+    panelToggle.textContent = panel.classList.contains('collapsed') ? '❯' : '❮';
 });
 
 // --- Tab Switching ----------------
@@ -940,62 +908,14 @@ function addOtpMarker(pt, color, label) {
     otpMarkers.push(marker);
 }
 
-async function searchPlaces(text, signal) {
-    const res = await fetch('/api/places?q=' + encodeURIComponent(text), { signal });
-    if (!res.ok) throw new Error('Place search is unavailable. Try again or tap the map.');
+async function geocodeMapbox(text) {
+    const res = await fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(text)}.json?access_token=${MAPBOX_API_KEY}&bbox=103.55,1.15,104.15,1.5`);
     const data = await res.json();
-    return data.places || [];
-}
-async function geocodePlace(text) { return (await searchPlaces(text))[0] || null; }
-function setupPlaceSuggestions(input, container, choose) {
-    let timer, controller, version = 0, places = [], active = -1;
-    input.setAttribute('role', 'combobox');
-    input.setAttribute('aria-autocomplete', 'list');
-    input.setAttribute('aria-controls', container.id);
-    input.setAttribute('aria-expanded', 'false');
-    container.setAttribute('role', 'listbox');
-    function close() { container.hidden = true; input.setAttribute('aria-expanded', 'false'); input.removeAttribute('aria-activedescendant'); }
-    function select(index) {
-        if (!places[index]) return;
-        version++; clearTimeout(timer); controller?.abort();
-        choose(places[index]); input.value = places[index].name; close(); input.blur(); updateOtpMarkers();
+    if (data.features && data.features.length > 0) {
+        return { lat: data.features[0].center[1], lon: data.features[0].center[0], name: data.features[0].place_name };
     }
-    input.addEventListener('input', () => {
-        clearTimeout(timer); controller?.abort(); const request = ++version; close();
-        const query = input.value.trim(); if (query.length < 2) return;
-        timer = setTimeout(async () => {
-            controller = new AbortController();
-            try {
-                const results = await searchPlaces(query, controller.signal);
-                if (request !== version) return;
-                places = results; active = -1;
-                container.innerHTML = places.length ? places.map((place, index) => '<button type="button" role="option" aria-selected="false" id="' + container.id + '-' + index + '" data-place="' + index + '" class="place-option">' + escapeHtml(place.name) + '</button>').join('') : '<div class="place-message">No places found. Try an address or postcode.</div>';
-                container.hidden = false; input.setAttribute('aria-expanded', 'true');
-            } catch (error) {
-                if (error.name === 'AbortError' || request !== version) return;
-                places = [];
-                container.innerHTML = '<div class="place-message">Place search unavailable. Try again or tap the map.</div>';
-                container.hidden = false; input.setAttribute('aria-expanded', 'true');
-            }
-        }, 300);
-    });
-    container.addEventListener('pointerdown', event => event.preventDefault());
-    container.addEventListener('click', event => { const option = event.target.closest('[data-place]'); if (option) select(Number(option.dataset.place)); });
-    input.addEventListener('keydown', event => {
-        if (event.key === 'Escape') { version++; controller?.abort(); close(); }
-        if (container.hidden || !places.length) return;
-        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-            event.preventDefault(); active = (active + (event.key === 'ArrowDown' ? 1 : -1) + places.length) % places.length;
-            container.querySelectorAll('[data-place]').forEach((option, index) => option.setAttribute('aria-selected', String(index === active)));
-            input.setAttribute('aria-activedescendant', container.id + '-' + active);
-            container.children[active]?.scrollIntoView({ block: 'nearest' });
-        }
-        if (event.key === 'Enter' && active >= 0) { event.preventDefault(); select(active); }
-    });
-    input.addEventListener('blur', () => { version++; clearTimeout(timer); controller?.abort(); close(); });
+    return null;
 }
-setupPlaceSuggestions(otpOriginInput, document.getElementById('otp-origin-suggestions'), place => { otpOrigin = place; });
-setupPlaceSuggestions(otpDestInput, document.getElementById('otp-dest-suggestions'), place => { otpDest = place; });
 
 function decodePolyline(str, precision) {
     let index = 0, lat = 0, lng = 0, coordinates = [], shift = 0, result = 0, byte = null;
@@ -1013,177 +933,35 @@ function decodePolyline(str, precision) {
     return coordinates;
 }
 
-const dateField = document.getElementById('otp-date-input');
-const timeField = document.getElementById('otp-time-input');
-let departureEdited = false;
-function setCurrentDeparture() {
-    if (departureEdited) return;
-    const parts = Object.fromEntries(new Intl.DateTimeFormat('en-GB', {
-        timeZone: 'Asia/Singapore', year: 'numeric', month: '2-digit', day: '2-digit',
-        hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
-    }).formatToParts(new Date()).map(part => [part.type, part.value]));
-    dateField.value = parts.year + '-' + parts.month + '-' + parts.day;
-    timeField.value = parts.hour + ':' + parts.minute;
-}
-[dateField, timeField].forEach(input => input.addEventListener('input', () => { departureEdited = true; }));
-setCurrentDeparture();
-setInterval(setCurrentDeparture, 60000);
-const otpPreference = document.getElementById('otp-preference');
-const otpMaxCrowd = document.getElementById('otp-max-crowd');
-const otpMaxTransfers = document.getElementById('otp-max-transfers');
-const otpMaxWalk = document.getElementById('otp-max-walk');
-const otpIncludeUnknown = document.getElementById('otp-include-unknown');
-let otpItineraries = [];
-let selectedOtpRoute = 0;
-const otpSort = document.getElementById('otp-sort');
-function rankOtpRoutes() {
-    const number = value => Number.isFinite(Number(value)) ? Number(value) : Infinity;
-    const crowdScore = route => route.crowd?.complete ? ({ l: 0, m: 1, h: 2 }[route.crowd.level] ?? 4) : route.crowd?.level && route.crowd.level !== 'unknown' ? 3 : 4;
-    const score = route => otpPreference.value === 'crowd' ? crowdScore(route) : number(route[otpPreference.value === 'transfers' ? 'transfers' : otpPreference.value === 'walking' ? 'walkDistance' : 'duration']);
-    otpItineraries.sort((a, b) => score(a) - score(b) || number(a.duration) - number(b.duration) || number(a.walkDistance) - number(b.walkDistance));
-    selectedOtpRoute = 0; renderOtpRoutes();
-    if (otpItineraries.length) drawOtpItinerary(otpItineraries[0]);
-}
-otpPreference.addEventListener('change', rankOtpRoutes);
-
-function escapeHtml(value) {
-    return String(value ?? '').replace(/[&<>"']/g, character => ({
-        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
-    })[character]);
-}
-
-function otpCrowdLabel(crowd) {
-    if (!crowd || crowd.level === 'unknown') return 'Crowd unknown';
-    const names = { l: 'Low crowd', m: 'Moderate crowd', h: 'High crowd' };
-    return (names[crowd.level] || 'Crowd unknown') + (crowd.complete ? '' : ' · partial');
-}
-
-function legDisplayName(leg) {
-    const mode = String(leg.mode || '').toUpperCase();
-    if (mode === 'WALK') return 'Walk';
-    if (mode === 'BUS') return `Bus ${leg.route || leg.routeShortName || ''}`.trim();
-    const lines = { NE: 'NEL', EW: 'EWL', NS: 'NSL', CC: 'CCL', DT: 'DTL', TE: 'TEL', CG: 'CGL', CE: 'CEL' };
-    const route = lines[leg.route] || leg.route || leg.routeShortName || '';
-    return `Train ${route}`.trim();
-}
-
-function itineraryFeatures(itinerary) {
-    return (itinerary.legs || []).flatMap(leg => {
-        if (!leg.legGeometry?.points) return [];
-        const coordinates = decodePolyline(leg.legGeometry.points);
-        return coordinates.length >= 2 ? [{
-            type: 'Feature', properties: { mode: String(leg.mode || '').toUpperCase() },
-            geometry: { type: 'LineString', coordinates }
-        }] : [];
-    });
-}
-
-function drawOtpItinerary(itinerary) {
-    clearSelectedRoute();
-    updateOtpMarkers();
-    const features = itineraryFeatures(itinerary);
-    if (!features.length) return;
-    map.addSource(ROUTE_SOURCE_ID, {
-        type: 'geojson', data: { type: 'FeatureCollection', features }
-    });
-    map.addLayer({
-        id: ROUTE_WALK_OUTLINE_LAYER_ID, type: 'line', source: ROUTE_SOURCE_ID,
-        filter: ['==', ['get', 'mode'], 'WALK'],
-        layout: { 'line-join': 'round', 'line-cap': 'round' },
-        paint: { 'line-color': '#ffffff', 'line-width': 8, 'line-opacity': .9 }
-    }, 'waterway-label');
-    map.addLayer({
-        id: ROUTE_LINE_LAYER_ID, type: 'line', source: ROUTE_SOURCE_ID,
-        filter: ['!=', ['get', 'mode'], 'WALK'],
-        layout: { 'line-join': 'round', 'line-cap': 'round' },
-        paint: {
-            'line-color': ['match', ['get', 'mode'], 'BUS', '#22c55e', '#ef4444'],
-            'line-width': 5
-        }
-    }, 'waterway-label');
-    map.addLayer({
-        id: ROUTE_WALK_LAYER_ID, type: 'line', source: ROUTE_SOURCE_ID,
-        filter: ['==', ['get', 'mode'], 'WALK'],
-        layout: { 'line-join': 'round', 'line-cap': 'round' },
-        paint: { 'line-color': '#64748b', 'line-width': 5, 'line-dasharray': [.1, 1.8] }
-    }, 'waterway-label');
-    const bounds = new mapboxgl.LngLatBounds();
-    features.flatMap(feature => feature.geometry.coordinates).forEach(coordinate => bounds.extend(coordinate));
-    const mobile = window.innerWidth < 768;
-    map.fitBounds(bounds, { padding: mobile
-        ? { top: Math.min(panel.getBoundingClientRect().height + 52, window.innerHeight * .65), bottom: 90, left: 24, right: 55 }
-        : { top: 60, bottom: 60, left: 450, right: 60 } });
-}
-
-function renderOtpRoutes() {
-    otpResults.innerHTML = otpItineraries.map((itinerary, index) => {
-        const crowd = itinerary.crowd || { level: 'unknown', complete: false, stations: [] };
-        const walking = Number.isFinite(Number(itinerary.walkDistance)) ? `${Math.round(itinerary.walkDistance)} m walk` : 'Walk unknown';
-        const transfers = Number.isFinite(Number(itinerary.transfers)) ? Number(itinerary.transfers) : 0;
-        const legDetails = index === selectedOtpRoute ? `<div class="otp-legs">${(itinerary.legs || []).map(leg => `
-            <div class="otp-leg"><strong>${escapeHtml(legDisplayName(leg))}</strong>: ${escapeHtml(leg.from?.name || 'Start')} → ${escapeHtml(leg.to?.name || 'Destination')} · ${Math.round(Number(leg.duration || 0) / 60)} min</div>
-        `).join('')}</div>` : '';
-        return `<button type="button" class="otp-route-card${index === selectedOtpRoute ? ' selected' : ''}" data-route-index="${index}" aria-pressed="${index === selectedOtpRoute}">
-            <div class="otp-card-heading"><strong>${Math.round(Number(itinerary.duration || 0) / 60)} min</strong><span>${index === 0 ? 'Recommended' : 'Alternative ' + index}</span></div>
-            <div class="otp-card-metrics"><span>${transfers} transfer${transfers === 1 ? '' : 's'}</span><span>${walking}</span></div>
-            <span class="otp-crowd otp-crowd-${crowd.level}">${escapeHtml(otpCrowdLabel(crowd))}</span>
-            ${legDetails}
-        </button>`;
-    }).join('');
-}
-
-function selectOtpItinerary(index) {
-    if (!otpItineraries[index]) return;
-    selectedOtpRoute = index;
-    renderOtpRoutes();
-    drawOtpItinerary(otpItineraries[index]);
-}
-
-otpResults.addEventListener('click', event => {
-    const card = event.target.closest('[data-route-index]');
-    if (card) selectOtpItinerary(Number(card.dataset.routeIndex));
-});
-
 otpClearBtn.addEventListener('click', () => {
     otpOrigin = null; otpDest = null;
     otpOriginInput.value = ''; otpDestInput.value = '';
     otpStatus.textContent = ''; otpResults.innerHTML = '';
-    otpItineraries = []; selectedOtpRoute = 0;
-    otpSort.hidden = true; departureEdited = false; setCurrentDeparture();
     activeOtpInput = 'origin';
     updateOtpMarkers();
     clearSelectedRoute();
 });
 
 otpSearchBtn.addEventListener('click', async () => {
-    setCurrentDeparture();
-    otpItineraries = []; otpResults.innerHTML = ''; otpSort.hidden = true;
-    otpStatus.textContent = 'Finding your travel options?';
-    otpSearchBtn.disabled = true;
-    otpSearchBtn.textContent = 'Finding routes…';
+    otpStatus.textContent = 'Searching...';
+    otpResults.innerHTML = '';
     clearSelectedRoute();
 
     try {
-        if (!otpOrigin && otpOriginInput.value.trim()) otpOrigin = await geocodePlace(otpOriginInput.value.trim());
-        if (!otpDest && otpDestInput.value.trim()) otpDest = await geocodePlace(otpDestInput.value.trim());
+        if (!otpOrigin && otpOriginInput.value.trim()) otpOrigin = await geocodeMapbox(otpOriginInput.value.trim());
+        if (!otpDest && otpDestInput.value.trim()) otpDest = await geocodeMapbox(otpDestInput.value.trim());
 
         if (!otpOrigin || !otpDest) {
             otpStatus.textContent = 'Please specify valid origin and destination.';
             return;
         }
         
-        otpOriginInput.value = otpOrigin.name;
-        otpDestInput.value = otpDest.name;
         updateOtpMarkers();
         
         const params = new URLSearchParams({
             fromPlace: `${otpOrigin.lat},${otpOrigin.lon}`,
             toPlace: `${otpDest.lat},${otpDest.lon}`,
-            preference: otpPreference.value,
-            maxCrowd: otpMaxCrowd.value,
-            maxTransfers: otpMaxTransfers.value,
-            maxWalk: otpMaxWalk.value,
-            includeUnknown: String(otpIncludeUnknown.checked)
+            mode: 'TRANSIT,WALK'
         });
         
         const dateInput = document.getElementById('otp-date-input').value;
@@ -1196,34 +974,91 @@ otpSearchBtn.addEventListener('click', async () => {
             params.append('time', timeInput);
         }
         
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 90000);
-        const res = await fetch(`/api/routing/plan?${params.toString()}`, { signal: controller.signal }).finally(() => clearTimeout(timeout));
+        const res = await fetch(`/api/routing/plan?${params.toString()}`);
+        if (!res.ok) throw new Error('Failed to fetch route from OneMap API');
         const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Failed to fetch routes from OneMap.');
         
         if (data.error || !data.plan || !data.plan.itineraries || data.plan.itineraries.length === 0) {
-            const found = Number(data.metadata?.candidateCount || 0);
-            otpStatus.textContent = found
-                ? `${found} routes were found, but none match all filters. Try allowing more walking, transfers, or unknown crowding.`
-                : 'No routes found for this departure time.';
-            otpResults.innerHTML = '';
+            otpStatus.textContent = 'No routes found.';
             return;
         }
 
-        otpItineraries = data.plan.itineraries;
-        selectedOtpRoute = 0;
-        const failures = Number(data.metadata?.profileErrors?.length || 0);
-        otpStatus.textContent = `${otpItineraries.length} matching route${otpItineraries.length === 1 ? '' : 's'} from ${data.metadata?.candidateCount || otpItineraries.length} distinct options.` +
-            (failures ? ' Some OneMap searches were unavailable; retry for more options.' : '');
-        otpSort.hidden = false;
-        rankOtpRoutes();
+        const itinerary = data.plan.itineraries[0];
+        otpStatus.textContent = `Found route: ${Math.round(itinerary.duration / 60)} min`;
+        
+        let html = '<div style="font-size:13px; line-height:1.4;">';
+        html += `
+            <div style="margin-bottom: 10px; display: flex; gap: 10px; flex-wrap: wrap;">
+                <div style="display: flex; align-items: center; gap: 4px;"><div style="width:12px; height:12px; background:#ef4444; border-radius:2px;"></div> Train</div>
+                <div style="display: flex; align-items: center; gap: 4px;"><div style="width:12px; height:12px; background:#22c55e; border-radius:2px;"></div> Bus</div>
+                <div style="display: flex; align-items: center; gap: 4px;"><div style="width:12px; height:12px; background:#9ca3af; border-radius:2px;"></div> Walk</div>
+            </div>
+        `;
+        let features = [];
+        let allCoordinates = [];
+        
+        itinerary.legs.forEach(leg => {
+            const mode = leg.mode;
+            const displayMode = mode === 'SUBWAY' ? 'TRAIN' : mode;
+            const from = leg.from.name;
+            const to = leg.to.name;
+            let routeName = leg.route;
+            if (routeName && ['SUBWAY', 'TRAIN', 'RAIL'].includes(mode)) {
+                const lines = { 'NE': 'NEL', 'EW': 'EWL', 'NS': 'NSL', 'CC': 'CCL', 'DT': 'DTL', 'TE': 'TEL', 'CG': 'CGL', 'CE': 'CEL' };
+                if (lines[routeName]) routeName = lines[routeName];
+            }
+            const routeStr = routeName ? ` (${routeName})` : '';
+            html += `<div style="padding: 6px; border-bottom: 1px solid #eee;">
+                <strong>${displayMode}${routeStr}</strong> from ${from} to ${to} <br/>
+                <span style="color:#666;">Duration: ${Math.round(leg.duration / 60)} min</span>
+            </div>`;
+            
+            if (leg.legGeometry && leg.legGeometry.points) {
+                const coords = decodePolyline(leg.legGeometry.points);
+                allCoordinates.push(...coords);
+                features.push({
+                    type: 'Feature',
+                    properties: { mode: mode },
+                    geometry: { type: 'LineString', coordinates: coords }
+                });
+            }
+        });
+        html += '</div>';
+        otpResults.innerHTML = html;
+
+        if (features.length > 0) {
+            map.addSource(ROUTE_SOURCE_ID, {
+                type: 'geojson',
+                data: { type: 'FeatureCollection', features: features }
+            });
+            map.addLayer({
+                id: ROUTE_LINE_LAYER_ID,
+                type: 'line',
+                source: ROUTE_SOURCE_ID,
+                layout: { 'line-join': 'round', 'line-cap': 'round' },
+                paint: { 
+                    'line-color': [
+                        'match',
+                        ['get', 'mode'],
+                        'WALK', '#9ca3af',      // Gray
+                        'BUS', '#22c55e',       // Green
+                        'SUBWAY', '#ef4444',    // Red
+                        'RAIL', '#ef4444',      // Red
+                        'TRAM', '#ef4444',      // Red
+                        'TRANSIT', '#ef4444',   // Red
+                        '#1d4ed8'               // Default Blue
+                    ], 
+                    'line-width': 4 
+                }
+            }, 'waterway-label');
+            
+            const bounds = new mapboxgl.LngLatBounds();
+            allCoordinates.forEach(c => bounds.extend(c));
+            map.fitBounds(bounds, { padding: 50 });
+        }
     } catch (err) {
         console.error(err);
-        otpStatus.textContent = err.name === 'AbortError' ? 'Route search timed out. Please try again.' : 'Error: ' + err.message;
-    } finally {
-        otpSearchBtn.disabled = false;
-        otpSearchBtn.textContent = 'Find Routes';
+        otpStatus.textContent = 'Error: ' + err.message;
     }
 });
 

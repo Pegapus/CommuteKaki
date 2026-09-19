@@ -1,15 +1,12 @@
 require('dotenv').config({ path: '.env' });
 
-const requiredEnvVars = ['MONGODB_URI', 'MONGODB_DBNAME', 'MAPBOX_API_KEY', 'LTA_DATAMALL_KEY', 'FRONT_END_URL'];
+const requiredEnvVars = ['MONGODB_URI', 'MONGODB_DBNAME', 'MAPBOX_API_KEY', 'LTA_DATAMALL_KEY', 'FRONT_END_URL', 'ONEMAP_TOKEN'];
 try {
     let missingEnvVars = [];
     for (const varName of requiredEnvVars) {
         if (!process.env[varName]) {
             missingEnvVars.push(varName);
         }
-    }
-    if (!process.env.ONEMAP_TOKEN && !process.env.ONEMAP_API_KEY && !process.env.ONEMAP_API_TOKEN && !process.env.onemap_api) {
-        missingEnvVars.push('ONEMAP_TOKEN or ONEMAP_API_KEY');
     }
     if (missingEnvVars.length != 0) {
         throw new Error(`Missing required environment variable(s): ${missingEnvVars}. Please add it to your .env file or environment configuration.`);
@@ -36,9 +33,6 @@ const { getBusServices } = require('./models/LTADatamallBusServices');
 const { getTrainServiceAlerts } = require('./models/TrainServiceAlerts');
 const { getBridgingPoints } = require('./models/BridgingPoints');
 const { isDatabaseEmpty, disconnect } = require('./configs/database');
-const { requestOneMapRoute } = require('./services/oneMapClient');
-const { searchPlaces } = require('./services/placeSearch');
-const { annotateCrowd, buildProfiles, filterAndRank, mergeProfileResults, normalizePreferences } = require('./services/routeRecommendations');
 
 // ---------------------------------------------------------------------------
 // On-demand bus route geometry (Mapbox Map Matching + Directions)
@@ -441,37 +435,17 @@ app.get('/api/train-alerts', async (req, res) => {
     }
 });
 
-app.get('/api/places', async (req, res) => {
-    const query = req.query.q;
-    if (typeof query !== 'string' || query.trim().length < 2 || query.length > 120) {
-        return res.status(400).json({ error: 'Enter a place or postcode between 2 and 120 characters.' });
-    }
-    try {
-        res.json({ places: await searchPlaces(query) });
-    } catch (error) {
-        console.error('OneMap place search failed:', error.message);
-        res.status(502).json({ error: 'Place search unavailable. Try again or select a point on the map.' });
-    }
-});
-
 app.get('/api/routing/plan', async (req, res) => {
     try {
-        const { fromPlace, toPlace, date, time } = req.query;
+        const { fromPlace, toPlace, date, time, mode } = req.query;
         if (!fromPlace || !toPlace) {
             return res.status(400).json({ error: 'fromPlace and toPlace are required.' });
         }
         
-        const token = process.env.ONEMAP_TOKEN || process.env.ONEMAP_API_KEY || process.env.ONEMAP_API_TOKEN || process.env.onemap_api;
+        const token = process.env.ONEMAP_TOKEN;
         if (!token) {
-            throw new Error("OneMap token is not configured. Set ONEMAP_TOKEN or ONEMAP_API_KEY.");
+            throw new Error("OneMap token (ONEMAP_TOKEN) not configured in environment variables.");
         }
-        const preferences = normalizePreferences({
-            preference: req.query.preference,
-            maxCrowd: req.query.maxCrowd,
-            maxTransfers: req.query.maxTransfers,
-            maxWalk: req.query.maxWalk,
-            includeUnknown: req.query.includeUnknown
-        });
         
         let formattedDate;
         if (date) {
@@ -497,47 +471,57 @@ app.get('/api/routing/plan', async (req, res) => {
             formattedTime = `${hh}:${min}:${ss}`;
         }
 
-        async function fetchOneMapRoute(start, end, d, t, routeMode, num = '3', maxWalkDistance) {
-            return requestOneMapRoute({
-                token, start, end, date: d, time: t, mode: routeMode,
-                numItineraries: Number(num), maxWalkDistance
-            });
+        async function fetchOneMapRoute(start, end, d, t, m, num = '3') {
+            const u = new URL('https://www.onemap.gov.sg/api/public/routingsvc/route');
+            u.searchParams.append('start', start);
+            u.searchParams.append('end', end);
+            u.searchParams.append('routeType', 'pt');
+            u.searchParams.append('mode', m);
+            u.searchParams.append('date', d);
+            u.searchParams.append('time', t);
+            u.searchParams.append('numItineraries', num);
+            console.log("Fetching:", u.toString());
+            const r = await fetch(u.toString(), { headers: { 'Authorization': token } });
+            if (!r.ok) {
+                if (r.status === 404) return null;
+                console.error("OneMap Error 400. Body:", await r.text());
+                throw new Error(`OneMap returned ${r.status}`);
+            }
+            const j = await r.json();
+            if (j.error) throw new Error(j.error);
+            return j;
         }
 
-        const profiles = buildProfiles(preferences);
-        const settled = await Promise.allSettled(profiles.map(profile => fetchOneMapRoute(
-            fromPlace, toPlace, formattedDate, formattedTime, profile.mode, '3', profile.maxWalkDistance
-        )));
-        const successful = settled.map((result, index) => ({ profile: profiles[index], result }))
-            .filter(item => item.result.status === 'fulfilled' && item.result.value?.plan?.itineraries?.length);
-        if (!successful.length) {
-            const failed = settled.find(result => result.status === 'rejected');
-            if (failed) throw failed.reason;
-            return res.json({ plan: { itineraries: [] }, metadata: { candidateCount: 0, matchingCount: 0, preferences } });
+        let data = await fetchOneMapRoute(fromPlace, toPlace, formattedDate, formattedTime, 'TRANSIT');
+        if (!data) return res.json({ error: 'No routes found.' });
+        
+        if (data.plan && data.plan.itineraries) {
+            data.plan.itineraries.sort((a, b) => {
+                const getScore = (itinerary) => {
+                    const modes = itinerary.legs.map(l => l.mode);
+                    const hasTrain = modes.includes('SUBWAY') || modes.includes('TRAM') || modes.includes('RAIL');
+                    const hasBus = modes.includes('BUS');
+                    
+                    if (hasTrain && !hasBus) {
+                        return 400; // Highest priority: Train without Bus
+                    } else if (hasTrain && hasBus) {
+                        return 300; // Second priority: Train with Bus
+                    } else if (!hasTrain && hasBus) {
+                        return 200; // Third priority: Bus without Train
+                    } else {
+                        return 100; // Lowest priority: Walk only
+                    }
+                };
+                
+                const scoreA = getScore(a);
+                const scoreB = getScore(b);
+                
+                if (scoreA !== scoreB) {
+                    return scoreB - scoreA; // Higher score first
+                }
+                return a.duration - b.duration; // Tie-breaker: shortest duration
+            });
         }
-        const rawItineraryCount = successful.reduce((total, item) => total + item.result.value.plan.itineraries.length, 0);
-        const merged = mergeProfileResults(successful.map(item => ({
-            profile: item.profile.name,
-            itineraries: item.result.value.plan.itineraries
-        })));
-        const crowdDensity = await getStationCrowdDensity().catch(error => {
-            console.error('Crowd data unavailable for route ranking:', error.message);
-            return {};
-        });
-        let data = {
-            ...successful[0].result.value,
-            plan: {
-                ...successful[0].result.value.plan,
-                itineraries: filterAndRank(annotateCrowd(merged, crowdDensity), preferences)
-            }
-        };
-        const candidateCount = merged.length;
-        const profileErrors = settled.map((result, index) => ({ result, profile: profiles[index] }))
-            .filter(item => item.result.status === 'rejected' || !item.result.value?.plan?.itineraries?.length)
-            .map(item => ({
-                profile: item.profile.name,
-                message: item.result.status === 'rejected' ? item.result.reason?.message || 'Search failed.' : 'No route returned.'
-            }));
         
         // --- SPLIT ROUTE LOGIC FOR TRAIN SERVICE ALERTS ---
         try {
@@ -610,8 +594,6 @@ app.get('/api/routing/plan', async (req, res) => {
                                     const combinedLegs = [...leg1.legs, ...leg2.legs, ...leg3.legs];
                                     const totalDuration = leg1.duration + leg2.duration + leg3.duration;
                                     const combinedItin = {
-                                        id: bestItin.id,
-                                        sourceProfiles: ['disruption-reroute'],
                                         duration: totalDuration,
                                         startTime: leg1.startTime,
                                         endTime: leg3.endTime,
@@ -634,17 +616,6 @@ app.get('/api/routing/plan', async (req, res) => {
             console.error("Error splitting route for alerts:", e);
         }
 
-        data.plan.itineraries = filterAndRank(annotateCrowd(data.plan.itineraries, crowdDensity), preferences);
-        data.metadata = {
-            preferences,
-            rawItineraryCount,
-            candidateCount,
-            matchingCount: data.plan.itineraries.length,
-            profilesRequested: profiles.map(profile => profile.name),
-            profilesSucceeded: successful.map(item => item.profile.name),
-            profileErrors
-        };
-        res.set('Cache-Control', 'no-store');
         res.json(data);
     } catch (error) {
         console.error('OneMap API error:', error.message);
