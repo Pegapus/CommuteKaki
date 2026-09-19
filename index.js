@@ -37,6 +37,7 @@ const { getTrainServiceAlerts } = require('./models/TrainServiceAlerts');
 const { getBridgingPoints } = require('./models/BridgingPoints');
 const { isDatabaseEmpty, disconnect } = require('./configs/database');
 const { requestOneMapRoute } = require('./services/oneMapClient');
+const { searchPlaces } = require('./services/placeSearch');
 const { annotateCrowd, buildProfiles, filterAndRank, mergeProfileResults, normalizePreferences } = require('./services/routeRecommendations');
 
 // ---------------------------------------------------------------------------
@@ -437,6 +438,19 @@ app.get('/api/train-alerts', async (req, res) => {
         res.json({ value: alertsData });
     } catch (error) {
         res.status(500).json({ error: error.message });
+    }
+});
+
+app.get('/api/places', async (req, res) => {
+    const query = req.query.q;
+    if (typeof query !== 'string' || query.trim().length < 2 || query.length > 120) {
+        return res.status(400).json({ error: 'Enter a place or postcode between 2 and 120 characters.' });
+    }
+    try {
+        res.json({ places: await searchPlaces(query) });
+    } catch (error) {
+        console.error('OneMap place search failed:', error.message);
+        res.status(502).json({ error: 'Place search unavailable. Try again or select a point on the map.' });
     }
 });
 

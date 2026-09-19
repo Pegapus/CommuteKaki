@@ -499,9 +499,10 @@ html, body {
 }
 
 #route-info-text {
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    min-width: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    line-height: 1.4;
 }
 
 #route-info-close {
@@ -745,7 +746,15 @@ button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-v
 #layer-panel { bottom: calc(28px + env(safe-area-inset-bottom)); right: 12px; padding: 4px 10px; }
 #layer-panel-title { display: none; }
 .layer-toggle { min-height: 44px; }
-#route-info-banner { top: auto; bottom: 86px; left: 12px; max-width: calc(100% - 80px); }
+#route-info-banner {
+    top: auto;
+    bottom: calc(86px + env(safe-area-inset-bottom, 0px));
+    left: calc(12px + env(safe-area-inset-left, 0px));
+    transform: none;
+    max-width: calc(100% - 80px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px));
+    border-radius: 16px;
+}
+#route-info-close { width: 44px; height: 44px; }
 @media (min-width: 768px) {
     #panel { top: 16px; left: 16px; width: 400px; max-height: calc(100dvh - 80px); padding: 16px; }
     #train-alerts-banner { width: 340px; }

@@ -941,12 +941,12 @@ function addOtpMarker(pt, color, label) {
 }
 
 async function searchPlaces(text, signal) {
-    const res = await fetch('https://api.mapbox.com/geocoding/v5/mapbox.places/' + encodeURIComponent(text) + '.json?access_token=' + MAPBOX_API_KEY + '&bbox=103.55,1.15,104.15,1.5&country=sg&limit=5', { signal });
+    const res = await fetch('/api/places?q=' + encodeURIComponent(text), { signal });
     if (!res.ok) throw new Error('Place search is unavailable. Try again or tap the map.');
     const data = await res.json();
-    return (data.features || []).map(feature => ({ lat: feature.center[1], lon: feature.center[0], name: feature.place_name }));
+    return data.places || [];
 }
-async function geocodeMapbox(text) { return (await searchPlaces(text))[0] || null; }
+async function geocodePlace(text) { return (await searchPlaces(text))[0] || null; }
 function setupPlaceSuggestions(input, container, choose) {
     let timer, controller, version = 0, places = [], active = -1;
     input.setAttribute('role', 'combobox');
@@ -1164,14 +1164,16 @@ otpSearchBtn.addEventListener('click', async () => {
     clearSelectedRoute();
 
     try {
-        if (!otpOrigin && otpOriginInput.value.trim()) otpOrigin = await geocodeMapbox(otpOriginInput.value.trim());
-        if (!otpDest && otpDestInput.value.trim()) otpDest = await geocodeMapbox(otpDestInput.value.trim());
+        if (!otpOrigin && otpOriginInput.value.trim()) otpOrigin = await geocodePlace(otpOriginInput.value.trim());
+        if (!otpDest && otpDestInput.value.trim()) otpDest = await geocodePlace(otpDestInput.value.trim());
 
         if (!otpOrigin || !otpDest) {
             otpStatus.textContent = 'Please specify valid origin and destination.';
             return;
         }
         
+        otpOriginInput.value = otpOrigin.name;
+        otpDestInput.value = otpDest.name;
         updateOtpMarkers();
         
         const params = new URLSearchParams({
